@@ -132,10 +132,10 @@ class KgRnnCVAE(BaseTFModel):
         self.vocab = api.vocab
         self.rev_vocab = api.rev_vocab
         self.vocab_size = len(self.vocab)
-        self.topic_vocab = api.topic_vocab
-        self.topic_vocab_size = len(self.topic_vocab)
-        self.da_vocab = api.dialog_act_vocab
-        self.da_vocab_size = len(self.da_vocab)
+        # self.topic_vocab = api.topic_vocab
+        # self.topic_vocab_size = len(self.topic_vocab)
+        # self.da_vocab = api.dialog_act_vocab
+        # self.da_vocab_size = len(self.da_vocab)
         self.sess = sess
         self.scope = scope
         self.max_utt_len = config.max_utt_len
@@ -169,14 +169,14 @@ class KgRnnCVAE(BaseTFModel):
         max_out_len = array_ops.shape(self.output_tokens)[1]
         batch_size = array_ops.shape(self.input_contexts)[0]
 
-        with variable_scope.variable_scope("topicEmbedding"):
-            t_embedding = tf.get_variable("embedding", [self.topic_vocab_size, config.topic_embed_size], dtype=tf.float32)
-            topic_embedding = embedding_ops.embedding_lookup(t_embedding, self.topics)
+        # with variable_scope.variable_scope("topicEmbedding"):
+        #     t_embedding = tf.get_variable("embedding", [self.topic_vocab_size, config.topic_embed_size], dtype=tf.float32)
+        #     topic_embedding = embedding_ops.embedding_lookup(t_embedding, self.topics)
 
-        if config.use_hcf:
-            with variable_scope.variable_scope("dialogActEmbedding"):
-                d_embedding = tf.get_variable("embedding", [self.da_vocab_size, config.da_embed_size], dtype=tf.float32)
-                da_embedding = embedding_ops.embedding_lookup(d_embedding, self.output_das)
+        # if config.use_hcf:
+        #     with variable_scope.variable_scope("dialogActEmbedding"):
+        #         d_embedding = tf.get_variable("embedding", [self.da_vocab_size, config.da_embed_size], dtype=tf.float32)
+        #         da_embedding = embedding_ops.embedding_lookup(d_embedding, self.output_das)
 
         with variable_scope.variable_scope("wordEmbedding"):
             self.embedding = tf.get_variable("embedding", [self.vocab_size, config.embed_size], dtype=tf.float32)
