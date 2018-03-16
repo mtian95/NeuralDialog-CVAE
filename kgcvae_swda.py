@@ -15,12 +15,16 @@ from models.cvae import KgRnnCVAE
 # constants
 tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
 tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
+# tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") #TODO 
 tf.app.flags.DEFINE_string("work_dir", "working", "Experiment results directory.")
 tf.app.flags.DEFINE_bool("equal_batch", True, "Make each batch has similar length.")
 tf.app.flags.DEFINE_bool("resume", False, "Resume from previous")
 tf.app.flags.DEFINE_bool("forward_only", False, "Only do decoding")
 tf.app.flags.DEFINE_bool("save_model", True, "Create checkpoints")
 tf.app.flags.DEFINE_string("test_path", "run1500783422", "the dir to load checkpoint for forward only")
+
+tf.app.flags.DEFINE_string("vocab_dict_path", "data/vocab", "Vocab files directory.")
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -43,7 +47,7 @@ def main():
     pp(config)
 
     # get data set
-    api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size)
+    api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size, vocab_dict_path=FLAGS.vocab_dict_path)
     dial_corpus = api.get_dialog_corpus()
     meta_corpus = api.get_meta_corpus()
 
@@ -55,7 +59,7 @@ def main():
     valid_feed = SWDADataLoader("Valid", valid_dial, valid_meta, config)
     test_feed = SWDADataLoader("Test", test_dial, test_meta, config)
 
-    if FLAGS.forward_only or FLAGS.resume:
+    if FLAGS.forward_only or FLAGS.resume: # if you're testing an existing implementation or resuming training
         log_dir = os.path.join(FLAGS.work_dir, FLAGS.test_path)
     else:
         log_dir = os.path.join(FLAGS.work_dir, "run"+str(int(time.time())))
@@ -94,12 +98,15 @@ def main():
             print("Reading dm models parameters from %s" % ckpt.model_checkpoint_path)
             model.saver.restore(sess, ckpt.model_checkpoint_path)
 
-        if not FLAGS.forward_only:
+        # if you're training a model
+        if not FLAGS.forward_only: 
             dm_checkpoint_path = os.path.join(ckp_dir, model.__class__.__name__+ ".ckpt")
             global_t = 1
             patience = 10  # wait for at least 10 epoch before stop
             dev_loss_threshold = np.inf
             best_dev_loss = np.inf
+
+            # train for a max of max_epoch's. saves the model after the epoch if it's some amount better than current best
             for epoch in range(config.max_epoch):
                 print(">> Epoch %d with lr %f" % (epoch, model.learning_rate.eval()))
 
@@ -109,14 +116,14 @@ def main():
                                           config.step_size, shuffle=True)
                 global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)
 
-                # begin validation
+                # begin validation and testing
                 valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
                                       valid_config.step_size, shuffle=False, intra_shuffle=False)
                 valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
 
                 test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
                                      test_config.step_size, shuffle=True, intra_shuffle=False)
-                test_model.test(sess, test_feed, num_batch=5)
+                test_model.test(sess, test_feed, num_batch=1) #TODO change this back
 
                 done_epoch = epoch + 1
                 # only save a models if the dev loss is smaller
@@ -124,7 +131,7 @@ def main():
                 if config.op == "sgd" and done_epoch > config.lr_hold:
                     sess.run(model.learning_rate_decay_op)
 
-                if valid_loss < best_dev_loss:
+                if True: #valid_loss < best_dev_loss: #TODO change this back
                     if valid_loss <= dev_loss_threshold * config.improve_threshold:
                         patience = max(patience, done_epoch * config.patient_increase)
                         dev_loss_threshold = valid_loss
@@ -140,8 +147,9 @@ def main():
                     break
             print("Best validation loss %f" % best_dev_loss)
             print("Done training")
+
+        # else if you're just testing an existing model
         else:
-            # begin validation
             # begin validation
             valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
                                   valid_config.step_size, shuffle=False, intra_shuffle=False)
@@ -151,6 +159,7 @@ def main():
                                   valid_config.step_size, shuffle=False, intra_shuffle=False)
             valid_model.valid("ELBO_TEST", sess, test_feed)
 
+            # begin testing
             dest_f = open(os.path.join(log_dir, "test.txt"), "wb")
             test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
                                  test_config.step_size, shuffle=False, intra_shuffle=False)
