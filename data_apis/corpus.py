@@ -3,6 +3,8 @@ import pickle as pkl
 from collections import Counter
 import numpy as np
 import nltk
+import json
+import os
 
 
 class SWDADialogCorpus(object):
@@ -10,7 +12,7 @@ class SWDADialogCorpus(object):
     sentiment_id = 1
     liwc_id = 2
 
-    def __init__(self, corpus_path, max_vocab_cnt=10000, word2vec=None, word2vec_dim=None):
+    def __init__(self, corpus_path, max_vocab_cnt=10000, word2vec=None, word2vec_dim=None, vocab_dict_path=None):
         """
         :param corpus_path: the folder that contains the SWDA dialog corpus
         """
@@ -26,6 +28,7 @@ class SWDADialogCorpus(object):
         self.train_corpus = self.process(data["train"])
         self.valid_corpus = self.process(data["valid"])
         self.test_corpus = self.process(data["test"])
+        self.vocab_dict_path = vocab_dict_path
         self.build_vocab(max_vocab_cnt)
         self.load_word2vec()
         print("Done loading corpus")
@@ -50,6 +53,8 @@ class SWDADialogCorpus(object):
             b_edu = float(l["B"]["education"])/3.0
             vec_a_meta = [a_age, a_edu] + ([0, 1] if l["A"]["sex"] == "FEMALE" else [1, 0])
             vec_b_meta = [b_age, b_edu] + ([0, 1] if l["B"]["sex"] == "FEMALE" else [1, 0])
+            # vec_a_meta = [0, 0, 0, 0]
+            # vec_b_meta = [0, 0, 0, 0]
 
             # for joint model we mode two side of speakers together. if A then its 0 other wise 1
             meta = (vec_a_meta, vec_b_meta, l["topic"])
@@ -80,6 +85,16 @@ class SWDADialogCorpus(object):
         self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count]
         self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)}
         self.unk_id = self.rev_vocab["<unk>"]
+
+
+        #TODO save these two dicts
+        if self.vocab_dict_path is not None:
+            with open(os.path.join(self.vocab_dict_path, "vocab.json"), 'w') as fp:
+                json.dump(self.vocab, fp)
+            with open(os.path.join(self.vocab_dict_path, "rev_vocab.json"), 'w') as fp:
+                json.dump(self.rev_vocab, fp)
+
+
         print("<d> index %d" % self.rev_vocab["<d>"])
         print("<sil> index %d" % self.rev_vocab.get("<sil>", -1))
 
