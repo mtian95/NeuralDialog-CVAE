@@ -15,7 +15,7 @@ from models.cvae import KgRnnCVAE
 # constants
 tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
 tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
-# tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") #TODO 
+# tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") # TODO redirect this to the correct corpus
 tf.app.flags.DEFINE_string("work_dir", "working", "Experiment results directory.")
 tf.app.flags.DEFINE_bool("equal_batch", True, "Make each batch has similar length.")
 tf.app.flags.DEFINE_bool("resume", False, "Resume from previous")
@@ -123,7 +123,7 @@ def main():
 
                 test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
                                      test_config.step_size, shuffle=True, intra_shuffle=False)
-                test_model.test(sess, test_feed, num_batch=1) #TODO change this back
+                test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
 
                 done_epoch = epoch + 1
                 # only save a models if the dev loss is smaller
@@ -131,7 +131,7 @@ def main():
                 if config.op == "sgd" and done_epoch > config.lr_hold:
                     sess.run(model.learning_rate_decay_op)
 
-                if True: #valid_loss < best_dev_loss: #TODO change this back
+                if True: #valid_loss < best_dev_loss: # TODO this change makes the model always save. Change this back when corpus not trivial
                     if valid_loss <= dev_loss_threshold * config.improve_threshold:
                         patience = max(patience, done_epoch * config.patient_increase)
                         dev_loss_threshold = valid_loss

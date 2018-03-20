@@ -71,7 +71,7 @@ class LongDataLoader(object):
                np.random.shuffle(new_grids)
             self.grid_indexes.extend(new_grids)
 
-        self.num_batch = len(self.grid_indexes)
+        self.num_batch = 1. #len(self.grid_indexes) #TODO fix this
         print("%s begins with %d batches with %d left over samples" % (self.name, self.num_batch, left_over))
 
     def next_batch(self):

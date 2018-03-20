@@ -40,6 +40,8 @@ def get_bow(embedding, avg=False):
     Assumption, the last dimension is the embedding
     The second last dimension is the sentence length. The rank must be 3
     """
+
+    # TODO Does this compress a sentence of embedding vectors into one vector to represent the whole thing?
     embedding_size = embedding.get_shape()[2].value
     if avg:
         return tf.reduce_mean(embedding, reduction_indices=[1]), embedding_size
