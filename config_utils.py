@@ -42,7 +42,8 @@ class KgCVAEConfig(object):
     improve_threshold = 0.996  # for early stopping
     patient_increase = 2.0  # for early stopping
     early_stop = True
-    max_epoch = 1  # max number of epoch of training # TODO change this back to not 1
+    max_epoch = 1  # max number of epoch of training # TODO change this back to not 1 (60)
+
     grad_noise = 0.0  # inject gradient noise?
 
 

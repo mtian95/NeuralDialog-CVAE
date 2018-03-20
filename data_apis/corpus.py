@@ -9,6 +9,7 @@ from gensim.models import LdaModel
 from gensim.corpora import Dictionary
 
 
+
 class SWDADialogCorpus(object):
     dialog_act_id = 0
     sentiment_id = 1
@@ -16,6 +17,7 @@ class SWDADialogCorpus(object):
 
     def __init__(self, corpus_path, max_vocab_cnt=10000, word2vec=None, word2vec_dim=None, vocab_dict_path=None, pretrained_vocab_dict_path=None, 
         lda_model_path=None, lda_bow_path=None):
+
         """
         :param corpus_path: the folder that contains the SWDA dialog corpus
         """
@@ -35,7 +37,6 @@ class SWDADialogCorpus(object):
         self.pretrained_vocab_dict_path = pretrained_vocab_dict_path
         self.lda_model_path = lda_model_path
         self.lda_bow_path = lda_bow_path
-
         self.build_vocab(max_vocab_cnt)
         self.load_word2vec()
         print("Done loading corpus")
@@ -65,6 +66,9 @@ class SWDADialogCorpus(object):
             vec_b_meta = [b_age, b_edu] + ([0, 1] if l["B"]["sex"] == "FEMALE" else [1, 0])
             meta = (vec_a_meta, vec_b_meta, l["topic"])
 
+
+            # for joint model we mode two side of speakers together. if A then its 0 other wise 1
+            meta = (vec_a_meta, vec_b_meta, l["topic"])
             dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
 
             new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
@@ -110,7 +114,9 @@ class SWDADialogCorpus(object):
         #     with open(os.path.join(self.vocab_dict_path, "rev_vocab.json"), 'w') as fp:
         #         json.dump(self.rev_vocab, fp)
 
-
+        self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count]
+        self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)}
+        self.unk_id = self.rev_vocab["<unk>"]
         print("<d> index %d" % self.rev_vocab["<d>"])
         print("<sil> index %d" % self.rev_vocab.get("<sil>", -1))
 
@@ -131,6 +137,9 @@ class SWDADialogCorpus(object):
             all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
 
         #TODO get rid of below lines
+        all_dialog_acts = []
+        for dialog in self.train_corpus[self.dialog_id]:
+            all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
         self.dialog_act_vocab = [t for t, cnt in Counter(all_dialog_acts).most_common()]
         self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
         print(self.dialog_act_vocab)

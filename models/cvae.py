@@ -106,6 +106,13 @@ class BaseTFModel(object):
 
 
         # gradient and optimizer
+        if log_dir is None:
+            return
+        # optimization
+        if self.scope is None:
+            tvars = tf.trainable_variables()
+        else:
+            tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
         grads = tf.gradients(loss, tvars)
         if config.grad_clip is not None:
             grads, _ = tf.clip_by_global_norm(grads, tf.constant(config.grad_clip))
@@ -152,7 +159,6 @@ class KgRnnCVAE(BaseTFModel):
 
         with tf.name_scope("io"):
             # all dialog context and known attributes
-            # TODO understand the shapes
             self.input_contexts = tf.placeholder(dtype=tf.int32, shape=(None, None, self.max_utt_len), name="dialog_context")
             self.floors = tf.placeholder(dtype=tf.int32, shape=(None, None), name="floor")
             self.context_lens = tf.placeholder(dtype=tf.int32, shape=(None,), name="context_lens")
@@ -197,6 +203,8 @@ class KgRnnCVAE(BaseTFModel):
             # embed the input
             input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
             # reshape embedding. -1 means that the first dimension can be whatever necessary to make the other 2 dimensions work w/the data 
+
+            input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
             input_embedding = tf.reshape(input_embedding, [-1, self.max_utt_len, config.embed_size])
             output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens)
 
@@ -259,6 +267,9 @@ class KgRnnCVAE(BaseTFModel):
         cond_embedding = tf.concat(cond_list, 1)
 
         # if use_hcf, include the attribute
+        cond_list = [topic_embedding, self.my_profile, self.ot_profile, enc_last_state]
+        cond_embedding = tf.concat(cond_list, 1)
+
         with variable_scope.variable_scope("recognitionNetwork"):
             if config.use_hcf:
                 recog_input = tf.concat([cond_embedding, output_embedding, attribute_fc1], 1)
@@ -334,7 +345,6 @@ class KgRnnCVAE(BaseTFModel):
                                                                         start_of_sequence_id=self.go_id,
                                                                         end_of_sequence_id=self.eos_id,
                                                                         maximum_length=self.max_utt_len,
-                 
                                                                         num_decoder_symbols=self.vocab_size,
                                                                         context_vector=selected_attribute_embedding)
                 dec_input_embedding = None
@@ -361,14 +371,13 @@ class KgRnnCVAE(BaseTFModel):
                                                                    sequence_length=dec_seq_lens,
                                                                    name='output_node')
 
+                                                                   
             if final_context_state is not None:
                 final_context_state = final_context_state[:, 0:array_ops.shape(dec_outs)[1]]
                 mask = tf.to_int32(tf.sign(tf.reduce_max(dec_outs, axis=2)))
-                self.dec_out_words = tf.multiply(tf.reverse(final_context_state, axis=[1]), mask, name="output")
+                self.dec_out_words = tf.multiply(tf.reverse(final_context_state, axis=[1]), mask)
             else:
-                self.dec_out_words = tf.argmax(dec_outs, 2, name="output")
-
-            print self.dec_out_words.name
+                self.dec_out_words = tf.argmax(dec_outs, 2)
 
         if not forward:
             with variable_scope.variable_scope("loss"):
@@ -473,7 +482,9 @@ class KgRnnCVAE(BaseTFModel):
 
             global_t += 1
             local_t += 1
+
             print(train_feed)
+
             if local_t % (train_feed.num_batch / 10) == 0:
                 kl_w = sess.run(self.kl_w, {self.global_t: global_t})
                 self.print_loss("%.2f" % (train_feed.ptr / float(train_feed.num_batch)),
@@ -481,6 +492,7 @@ class KgRnnCVAE(BaseTFModel):
 
         # finish epoch!
         epoch_time = time.time() - start_time
+
         # avg_losses = self.print_loss("Epoch Done", loss_names,
         #                              [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses],
         #                              "step time %.4f" % (epoch_time / train_feed.num_batch))
@@ -488,6 +500,7 @@ class KgRnnCVAE(BaseTFModel):
         avg_losses = self.print_loss("Epoch Done", loss_names,
                                      [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses],
                                      "step time %.4f" % (epoch_time / 1))
+
         return global_t, avg_losses[0]
 
     def valid(self, name, sess, valid_feed):
@@ -578,3 +591,4 @@ class KgRnnCVAE(BaseTFModel):
         print report
         dest.write(report + "\n")
         print("Done testing")
+
