@@ -7,3 +7,4 @@ full_swda_clean_42da_sentiment_dialog_corpus.p
 *.zip
 data/dbpedia_csv/
 .ipynb_checkpoints/
+data/test_data.*
