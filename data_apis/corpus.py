@@ -5,6 +5,7 @@ import numpy as np
 import nltk
 import json
 import os
+import sys
 from gensim.models import LdaModel
 from gensim.corpora import Dictionary
 
@@ -15,8 +16,8 @@ class SWDADialogCorpus(object):
     sentiment_id = 1
     liwc_id = 2
 
-    def __init__(self, corpus_path, max_vocab_cnt=10000, word2vec=None, word2vec_dim=None, vocab_dict_path=None, pretrained_vocab_dict_path=None, 
-        lda_model_path=None, lda_bow_path=None):
+    def __init__(self, corpus_path, max_vocab_cnt=10000, word2vec=None, word2vec_dim=None, vocab_dict_path=None, 
+        lda_model=None):
 
         """
         :param corpus_path: the folder that contains the SWDA dialog corpus
@@ -26,17 +27,16 @@ class SWDADialogCorpus(object):
         self.word2vec_dim = word2vec_dim
         self.word2vec = None
         self.dialog_id = 0
-        self.meta_id = 1
-        self.utt_id = 2
+        # self.meta_id = 1
+        # self.utt_id = 2
+        self.utt_id = 1 
         self.sil_utt = ["<s>", "<sil>", "</s>"]
         data = pkl.load(open(self._path, "rb"))
         self.train_corpus = self.process(data["train"])
         self.valid_corpus = self.process(data["valid"])
         self.test_corpus = self.process(data["test"])
         self.vocab_dict_path = vocab_dict_path
-        self.pretrained_vocab_dict_path = pretrained_vocab_dict_path
-        self.lda_model_path = lda_model_path
-        self.lda_bow_path = lda_bow_path
+        self.lda_model = lda_model
         self.build_vocab(max_vocab_cnt)
         self.load_word2vec()
         print("Done loading corpus")
@@ -47,36 +47,29 @@ class SWDADialogCorpus(object):
         new_dialog = []
         new_meta = []
         new_utts = []
-        bod_utt = ["<s>", "<d>", "</s>"]
+        bod_utt = ["<s>", "<d>", "</s>"] # TODO what do we do about topic for this?
         all_lenes = []
 
         for l in data:
-            # TODO get rid of feat
-            lower_utts = [(caller, ["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"], feat)
+            # lower_utts = list of tokenized version of the strings
+            lower_utts = [(["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"])
                           for caller, utt, feat in l["utts"]]
-            all_lenes.extend([len(u) for c, u, f in lower_utts])
+            all_lenes.extend([len(u) for u in lower_utts])
+            # lower_utts = [(caller, ["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"], feat)
+                          # for caller, utt, feat in l["utts"]]
+            # all_lenes.extend([len(u) for c, u, f in lower_utts])
 
-            # TODO get rid of the below and make a counter for metadata
-            # meta = reversed(range(len(l["utts"])))
-            a_age = float(l["A"]["age"])/100.0
-            b_age = float(l["B"]["age"])/100.0
-            a_edu = float(l["A"]["education"])/3.0
-            b_edu = float(l["B"]["education"])/3.0
-            vec_a_meta = [a_age, a_edu] + ([0, 1] if l["A"]["sex"] == "FEMALE" else [1, 0])
-            vec_b_meta = [b_age, b_edu] + ([0, 1] if l["B"]["sex"] == "FEMALE" else [1, 0])
-            meta = (vec_a_meta, vec_b_meta, l["topic"])
+            # dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
+            dialog = [(bod_utt, 0)] + [(utt, int(ind==len(lower_utts)-1)) for ind, utt in enumerate(lower_utts)]
 
-
-            # for joint model we mode two side of speakers together. if A then its 0 other wise 1
-            meta = (vec_a_meta, vec_b_meta, l["topic"])
-            dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
-
-            new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
+            #new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
+            new_utts.extend([bod_utt] + lower_utts)
             new_dialog.append(dialog)
-            new_meta.append(meta)
+            # new_meta.append(meta)
 
         print("Max utt len %d, mean utt len %.2f" % (np.max(all_lenes), float(np.mean(all_lenes))))
-        return new_dialog, new_meta, new_utts
+        # return new_dialog, new_meta, new_utts
+        return new_dialog, new_utts
 
     def build_vocab(self, max_vocab_cnt):
         all_words = []
@@ -93,26 +86,10 @@ class SWDADialogCorpus(object):
               % (len(self.train_corpus), len(self.valid_corpus), len(self.test_corpus),
                  raw_vocab_size, len(vocab_count), vocab_count[-1][1], float(discard_wc) / len(all_words)))
 
-        # if not using a pre-determined word to id dictionary...
-        if self.pretrained_vocab_dict_path is None:
-            self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count] # is a list
-            self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)} 
-            self.unk_id = self.rev_vocab["<unk>"]
-            # TODO do you ever need pad id?
-
-        # if using a pre-determined word to id dictionary (likely from LDA topic model)...
-        else:
-            pass
-            # TODO import it from path
-            # add pad and unk to it
-            # self.unk_id = self.rev_vocab["<unk>"]
-
-        #TODO do we still want to save these?
-        # if self.vocab_dict_path is not None:
-        #     with open(os.path.join(self.vocab_dict_path, "vocab.json"), 'w') as fp:
-        #         json.dump(self.vocab, fp)
-        #     with open(os.path.join(self.vocab_dict_path, "rev_vocab.json"), 'w') as fp:
-        #         json.dump(self.rev_vocab, fp)
+        # make vocab
+        self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count] # is a list
+        self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)} 
+        self.unk_id = self.rev_vocab["<unk>"]
 
         self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count]
         self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)}
@@ -120,30 +97,27 @@ class SWDADialogCorpus(object):
         print("<d> index %d" % self.rev_vocab["<d>"])
         print("<sil> index %d" % self.rev_vocab.get("<sil>", -1))
 
-        # create topic vocab
-        all_topics = []
-        for a, b, topic in self.train_corpus[self.meta_id]:
-            all_topics.append(topic)
-        self.topic_vocab = [t for t, cnt in Counter(all_topics).most_common()]
-        self.rev_topic_vocab = {t: idx for idx, t in enumerate(self.topic_vocab)}
-        print("%d topics in train data" % len(self.topic_vocab))
+        # NOTE commenting out below lines gets rid of topic vocab and dialog vocab
+        # # create topic vocab
+        # all_topics = []
+        # for a, b, topic in self.train_corpus[self.meta_id]:
+        #     all_topics.append(topic)
+        # self.topic_vocab = [t for t, cnt in Counter(all_topics).most_common()]
+        # self.rev_topic_vocab = {t: idx for idx, t in enumerate(self.topic_vocab)}
+        # print("%d topics in train data" % len(self.topic_vocab))
 
-        # get dialog act labels
-        # TODO get rid of all of this
-        all_dialog_acts = []
-        for dialog in self.train_corpus[self.dialog_id]:
-            # TODO use lda model on each feat[self.dialog_act_id] for caller, utt, feat in dialog
-            # or can do this down in line 173 ish
-            all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
+        # # get dialog act labels
+        # all_dialog_acts = []
+        # for dialog in self.train_corpus[self.dialog_id]:
+        #     all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
 
-        #TODO get rid of below lines
-        all_dialog_acts = []
-        for dialog in self.train_corpus[self.dialog_id]:
-            all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
-        self.dialog_act_vocab = [t for t, cnt in Counter(all_dialog_acts).most_common()]
-        self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
-        print(self.dialog_act_vocab)
-        print("%d dialog acts in train data" % len(self.dialog_act_vocab))
+        # all_dialog_acts = []
+        # for dialog in self.train_corpus[self.dialog_id]:
+        #     all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
+        # self.dialog_act_vocab = [t for t, cnt in Counter(all_dialog_acts).most_common()]
+        # self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
+        # print(self.dialog_act_vocab)
+        # print("%d dialog acts in train data" % len(self.dialog_act_vocab))
 
     def load_word2vec(self):
         if self.word_vec_path is None:
@@ -167,6 +141,7 @@ class SWDADialogCorpus(object):
             self.word2vec.append(vec)
         print("word2vec cannot cover %f vocab" % (float(oov_cnt)/len(self.vocab)))
 
+    # returns tokenized versions of the corpus. currently not used.
     def get_utt_corpus(self):
         def _to_id_corpus(data):
             results = []
@@ -179,26 +154,30 @@ class SWDADialogCorpus(object):
         id_test = _to_id_corpus(self.test_corpus[self.utt_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
+    # returns list of lists, one list for each paragraph
+    # each list = list of tuples, one for each sentence
+    # sentence tuple = ([tokens rep each word in sent], floor, feat)
+    # to_id_corpus2: returns (sent in tokens, 0/1 paragraph end label, vector version of topic of just that sent)
     def get_dialog_corpus(self):
-        # runs LDA model on list of sentences s to get topic vector
-        def _get_topic_vector(s):
-            text = " ".join(s)
-            lda_model = LdaModel.load(self.lda_model_path)
-            lda_bow = Dictionary.load_from_text(self.lda_bow_path)
-            bow_vector = id2word_wiki.doc2bow(tokenize(text))
-            return lda_model[bow_vector]
-
         # returns a topic vector for each paragraph
-        def _to_topic_corpus(data):
+        def _get_topic_vector(text):
+            text = " ".join(text)
+            return self.lda_model.get_topic_vector(text)
+
+        def _to_id_corpus2(data):
             results = []
             for dialog in data:
-                temp_utt = []
-                for utt, floor, feat in dialog:
-                    temp_utt.append(utt)
-                    results.append(_get_topic_vector(temp_utt))
+                temp_text = []
+                temp_tokens = []
+                temp_topics = []
+                for utt, end_label in dialog:
+                    temp_topics.append(_get_topic_vector(utt))
+                    temp_tokens.append([self.rev_vocab.get(t, self.unk_id) for t in utt])
+                temp_floor = [0]*(len(dialog)-1) + [1]
+                results.append(zip(temp_tokens, temp_floor, temp_topics))
             return results
 
-        # TODO stop using this _to_id_corpus method and use above 2 instead
+        # deprecated method
         def _to_id_corpus(data):
             results = []
             for dialog in data:
@@ -213,20 +192,31 @@ class SWDADialogCorpus(object):
                     temp.append(([self.rev_vocab.get(t, self.unk_id) for t in utt], floor, id_feat))
                 results.append(temp)
             return results
-        id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
-        id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
-        id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
+
+        # id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
+        # id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
+        # id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
+        id_train = _to_id_corpus2(self.train_corpus[self.dialog_id])
+        id_valid = _to_id_corpus2(self.valid_corpus[self.dialog_id])
+        id_test = _to_id_corpus2(self.test_corpus[self.dialog_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
+    # returns topic vector for entire paragraph (or keywords during testing). this is fed in as metadata
     def get_meta_corpus(self):
         def _to_id_corpus(data):
             results = []
-            for m_meta, o_meta, topic in data:
-                results.append((m_meta, o_meta, self.rev_topic_vocab[topic]))
+            for dialog in data:
+                tmp_sentences = []
+                for utt, end_label in dialog:
+                    tmp_sentences.extend(utt)
+                results.append(self.lda_model.get_topic_vector(" ".join(tmp_sentences)))
             return results
 
-        id_train = _to_id_corpus(self.train_corpus[self.meta_id])
-        id_valid = _to_id_corpus(self.valid_corpus[self.meta_id])
-        id_test = _to_id_corpus(self.test_corpus[self.meta_id])
+        # id_train = _to_id_corpus(self.train_corpus[self.meta_id])
+        # id_valid = _to_id_corpus(self.valid_corpus[self.meta_id])
+        # id_test = _to_id_corpus(self.test_corpus[self.meta_id])
+        id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
+        id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
+        id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
