@@ -318,8 +318,6 @@ class KgRnnCVAE(BaseTFModel):
                 pred_attribute_embedding = da_prob # NOTE change the name of this to predicted sentence topic
                 # pred_attribute_embedding = tf.matmul(da_prob, d_embedding)
 
-                # TODO change this to take in the correct sentence topic 
-                # currently, attribute_embedding = da_embedding = self.output_das embedded
                 if forward:
                     selected_attribute_embedding = pred_attribute_embedding
                 else:
@@ -427,7 +425,7 @@ class KgRnnCVAE(BaseTFModel):
                 # Predict 0/1 (1 = last sentence in paragraph)
                 # TODO need to reduce mean?
                 self.end_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-                            labels = self.floors, #TODO why did i cast this 
+                            labels = self.floors, 
                             logits = self.paragraph_end_logits)
 
                 # Topic prediction loss 
@@ -576,7 +574,7 @@ class KgRnnCVAE(BaseTFModel):
                                      [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses], "")
         return avg_losses[0]
 
-    # TODO understand this section
+    # TODO understand and fix this section
     def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout):
         local_t = 0
         recall_bleus = []
@@ -598,7 +596,7 @@ class KgRnnCVAE(BaseTFModel):
             true_srcs = feed_dict[self.input_contexts]
             true_src_lens = feed_dict[self.context_lens]
             true_outs = feed_dict[self.output_tokens]
-            true_topics = feed_dict[self.topics]
+            # true_topics = feed_dict[self.topics]
             true_das = feed_dict[self.output_das]
             local_t += 1
 
@@ -608,7 +606,7 @@ class KgRnnCVAE(BaseTFModel):
 
             for b_id in range(test_feed.batch_size):
                 # print the real/true dialog context
-                dest.write("Batch %d index %d of topic %s\n" % (local_t, b_id, self.topic_vocab[true_topics[b_id]]))
+                # dest.write("Batch %d index %d of topic %s\n" % (local_t, b_id, self.topic_vocab[true_topics[b_id]]))
                 start = np.maximum(0, true_src_lens[b_id]-5)
                 for t_id in range(start, true_srcs.shape[1], 1):
                     src_str = " ".join([self.vocab[e] for e in true_srcs[b_id, t_id].tolist() if e != 0])

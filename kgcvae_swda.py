@@ -132,13 +132,13 @@ def main():
                 global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)
 
                 # begin validation and testing
-                valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
-                                      valid_config.step_size, shuffle=False, intra_shuffle=False)
-                valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
+                # valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
+                #                       valid_config.step_size, shuffle=False, intra_shuffle=False)
+                # valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
 
-                test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
-                                     test_config.step_size, shuffle=True, intra_shuffle=False)
-                test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
+                # test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
+                #                      test_config.step_size, shuffle=True, intra_shuffle=False)
+                # test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
 
 
                 done_epoch = epoch + 1
@@ -148,20 +148,20 @@ def main():
                     sess.run(model.learning_rate_decay_op)
 
                 if True: #valid_loss < best_dev_loss: # TODO this change makes the model always save. Change this back when corpus not trivial
-                    if valid_loss <= dev_loss_threshold * config.improve_threshold:
+                    if True: #valid_loss <= dev_loss_threshold * config.improve_threshold:
                         patience = max(patience, done_epoch * config.patient_increase)
-                        dev_loss_threshold = valid_loss
+                        # dev_loss_threshold = valid_loss
 
                     # still save the best train model
                     if FLAGS.save_model:
                         print("Save model!!")
                         model.saver.save(sess, dm_checkpoint_path, global_step=epoch)
-                    best_dev_loss = valid_loss
+                    # best_dev_loss = valid_loss
 
                 if config.early_stop and patience <= done_epoch:
                     print("!!Early stop due to run out of patience!!")
                     break
-            print("Best validation loss %f" % best_dev_loss)
+            # print("Best validation loss %f" % best_dev_loss)
             print("Done training")
 
 
