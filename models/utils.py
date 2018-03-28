@@ -73,6 +73,6 @@ def get_bi_rnn_encode(embedding, f_cell, b_cell, length_mask=None, scope=None, r
         if length_mask is None:
             length_mask = tf.reduce_sum(tf.sign(tf.reduce_max(tf.abs(embedding), reduction_indices=2)),reduction_indices=1)
             length_mask = tf.to_int32(length_mask)
-        _, encoded_input = tf.nn.bidirectional_dynamic_rnn(f_cell, b_cell, embedding, sequence_length=length_mask, dtype=tf.float32)
+        _, encoded_input = tf.nn.bidirectional_dynamic_rnn(f_cell, b_cell, embedding, dtype=tf.float32) #sequence_length=length_mask
         encoded_input = tf.concat(encoded_input, 1)
         return encoded_input, f_cell.state_size+b_cell.state_size

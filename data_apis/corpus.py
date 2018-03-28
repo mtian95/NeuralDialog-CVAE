@@ -18,7 +18,7 @@ class SWDADialogCorpus(object):
     liwc_id = 2
 
     def __init__(self, corpus_path, max_vocab_cnt=10000, word2vec=None, word2vec_dim=None, vocab_dict_path=None, 
-        lda_model=None):
+        lda_model=None, imdb=False):
 
         """
         :param corpus_path: the folder that contains the SWDA dialog corpus
@@ -28,16 +28,34 @@ class SWDADialogCorpus(object):
         self.word2vec_dim = word2vec_dim
         self.word2vec = None
         self.dialog_id = 0
-        # self.meta_id = 1
+        self.meta_id = 1
         # self.utt_id = 2
         self.utt_id = 1 
         self.sil_utt = ["<s>", "<sil>", "</s>"]
+        self.imdb = imdb
         
-        data = pkl.load(open(self._path, "rb"))
+        if not self.imdb:
+            data = pkl.load(open(self._path, "rb"))
+            self.train_corpus = self.process(data["train"])
+            self.valid_corpus = self.process(data["valid"])
+            self.test_corpus = self.process(data["test"])
 
-        self.train_corpus = self.process(data["train"])
-        self.valid_corpus = self.process(data["valid"])
-        self.test_corpus = self.process(data["test"])
+        elif self.imdb:
+            self.index_from = 3
+            (x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
+                                                                    path='imdb.npz',
+                                                                    num_words=None,
+                                                                    skip_top=0,
+                                                                    maxlen=None,
+                                                                    seed=113,
+                                                                    start_char=2,
+                                                                    oov_char=1,
+                                                                    index_from=self.index_from)
+
+            self.train_corpus = self.process(x_train)
+            self.valid_corpus = self.process(data["valid"])
+            self.test_corpus = self.process(data["test"])
+
         self.vocab_dict_path = vocab_dict_path
         self.lda_model = lda_model
         self.build_vocab(max_vocab_cnt)
@@ -63,9 +81,11 @@ class SWDADialogCorpus(object):
             # all_lenes.extend([len(u) for c, u, f in lower_utts])
 
             # dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
-            dialog = [(bod_utt, 0)] + [(utt, int(ind==len(lower_utts)-1)) for ind, utt in enumerate(lower_utts)]
+            # dialog = [(bod_utt, 0)] + [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
+            dialog = [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
 
-            #new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
+
+            # new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
             new_utts.extend([bod_utt] + lower_utts)
             new_dialog.append(dialog)
             # new_meta.append(meta)
@@ -75,30 +95,39 @@ class SWDADialogCorpus(object):
         return new_dialog, new_utts
 
     def build_vocab(self, max_vocab_cnt):
-        all_words = []
-        for tokens in self.train_corpus[self.utt_id]:
-            all_words.extend(tokens)
-        vocab_count = Counter(all_words).most_common()
-        raw_vocab_size = len(vocab_count)
-        discard_wc = np.sum([c for t, c, in vocab_count[max_vocab_cnt:]])
-        vocab_count = vocab_count[0:max_vocab_cnt]
+        if not self.imdb:
+            all_words = []
+            for tokens in self.train_corpus[self.utt_id]:
+                all_words.extend(tokens)
+            vocab_count = Counter(all_words).most_common()
+            raw_vocab_size = len(vocab_count)
+            discard_wc = np.sum([c for t, c, in vocab_count[max_vocab_cnt:]])
+            vocab_count = vocab_count[0:max_vocab_cnt]
 
-        # create vocabulary list sorted by count
-        print("Load corpus with train size %d, valid size %d, "
-              "test size %d raw vocab size %d vocab size %d at cut_off %d OOV rate %f"
-              % (len(self.train_corpus), len(self.valid_corpus), len(self.test_corpus),
-                 raw_vocab_size, len(vocab_count), vocab_count[-1][1], float(discard_wc) / len(all_words)))
+            # create vocabulary list sorted by count
+            print("Load corpus with train size %d, valid size %d, "
+                  "test size %d raw vocab size %d vocab size %d at cut_off %d OOV rate %f"
+                  % (len(self.train_corpus), len(self.valid_corpus), len(self.test_corpus),
+                     raw_vocab_size, len(vocab_count), vocab_count[-1][1], float(discard_wc) / len(all_words)))
 
-        # make vocab
-        self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count] # is a list
-        self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)} 
-        self.unk_id = self.rev_vocab["<unk>"]
+            # make vocab
+            self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count] # is a list
+            self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)} 
+            self.unk_id = self.rev_vocab["<unk>"]
 
-        self.vocab = ["<pad>", "<unk>"] + [t for t, cnt in vocab_count]
-        self.rev_vocab = {t: idx for idx, t in enumerate(self.vocab)}
-        self.unk_id = self.rev_vocab["<unk>"]
-        print("<d> index %d" % self.rev_vocab["<d>"])
-        print("<sil> index %d" % self.rev_vocab.get("<sil>", -1))
+            print("<d> index %d" % self.rev_vocab["<d>"])
+            print("<sil> index %d" % self.rev_vocab.get("<sil>", -1))
+
+        elif self.imdb:
+            raise NotImplementedError("Need to get imdb to work")
+            # word_to_id = imdb.get_word_index()
+            # word_to_id = {k:(v + self.index_from) for k,v in word_to_id.items()}
+            # word_to_id["<pad>"] = 0
+            # word_to_id["<s>"] = 2
+            # word_to_id["<unk>"] = 1
+            # make word_to_id into a list and that'll be self.vocab. need to leave some blanks in the front
+            # self.unk_id = 1
+            # self.rev_vocab = {v:k for k,v in word_to_id.items()}
 
         # NOTE commenting out below lines gets rid of topic vocab and dialog vocab
         # # create topic vocab
@@ -169,6 +198,7 @@ class SWDADialogCorpus(object):
 
         def _to_id_corpus2(data):
             results = []
+            # counter = 0
             for dialog in data:
                 temp_text = []
                 temp_tokens = []
@@ -178,6 +208,9 @@ class SWDADialogCorpus(object):
                     temp_tokens.append([self.rev_vocab.get(t, self.unk_id) for t in utt])
                 temp_floor = [0]*(len(dialog)-1) + [1]
                 results.append(zip(temp_tokens, temp_floor, temp_topics))
+                # counter += 1
+                # if counter == 31:
+                #     break
             return results
 
         # deprecated method
@@ -196,9 +229,6 @@ class SWDADialogCorpus(object):
                 results.append(temp)
             return results
 
-        # id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
-        # id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
-        # id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
         id_train = _to_id_corpus2(self.train_corpus[self.dialog_id])
         id_valid = _to_id_corpus2(self.valid_corpus[self.dialog_id])
         id_test = _to_id_corpus2(self.test_corpus[self.dialog_id])
@@ -208,16 +238,17 @@ class SWDADialogCorpus(object):
     def get_meta_corpus(self):
         def _to_id_corpus(data):
             results = []
+            # counter = 0
             for dialog in data:
                 tmp_sentences = []
                 for utt, end_label in dialog:
                     tmp_sentences.extend(utt)
                 results.append(self.lda_model.get_topic_vector(" ".join(tmp_sentences)))
+                # counter += 1
+                # if counter == 31:
+                #     break
             return results
 
-        # id_train = _to_id_corpus(self.train_corpus[self.meta_id])
-        # id_valid = _to_id_corpus(self.valid_corpus[self.meta_id])
-        # id_test = _to_id_corpus(self.test_corpus[self.meta_id])
         id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
         id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
         id_test = _to_id_corpus(self.test_corpus[self.dialog_id])

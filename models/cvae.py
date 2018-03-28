@@ -13,6 +13,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import rnn_cell_impl as rnn_cell
 from tensorflow.python.ops import variable_scope
+from tensorflow.contrib import distributions
 
 import decoder_fn_lib
 import utils
@@ -162,6 +163,7 @@ class KgRnnCVAE(BaseTFModel):
             # all dialog context and known attributes
             self.input_contexts = tf.placeholder(dtype=tf.int32, shape=(None, None, self.max_utt_len), name="dialog_context")
             self.floors = tf.placeholder(dtype=tf.float32, shape=(None, None), name="floor") # TODO float
+            self.floor_labels = tf.placeholder(dtype=tf.float32, shape=(None, ), name="floor_labels")
             self.context_lens = tf.placeholder(dtype=tf.int32, shape=(None,), name="context_lens")
             self.paragraph_topics = tf.placeholder(dtype=tf.float32, shape=(None,self.num_topics), name="paragraph_topics") 
             # self.topics = tf.placeholder(dtype=tf.int32, shape=(None,), name="topics")
@@ -424,15 +426,18 @@ class KgRnnCVAE(BaseTFModel):
 
                 # Predict 0/1 (1 = last sentence in paragraph)
                 # TODO need to reduce mean?
-                self.end_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-                            labels = self.floors, 
-                            logits = self.paragraph_end_logits)
+                self.end_loss = tf.nn.softmax_cross_entropy_with_logits(
+                            labels = self.floor_labels, 
+                            logits = tf.transpose(self.paragraph_end_logits))
 
                 # Topic prediction loss 
+                # TODO does this way of doing KL work?
                 if config.use_hcf:
-                    da_loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=self.output_das) 
-                    self.avg_da_loss = tf.reduce_mean(da_loss)
-                    # da_loss = Multinomial(total_count=1., logits=logits)
+                    div_prob = tf.divide(self.da_logits, self.output_das)
+                    self.avg_da_loss = tf.reduce_mean(-tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=div_prob))
+                    # da_loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=self.output_das) 
+                    # self.avg_da_loss = tf.reduce_mean(da_loss)
+
                 else:
                     self.avg_da_loss = 0.0
 
@@ -467,7 +472,7 @@ class KgRnnCVAE(BaseTFModel):
     def batch_2_feed(self, batch, global_t, use_prior, repeat=1):
         # NOTE here's where the outputs are fed in
         # context, context_lens, floors, topics, my_profiles, ot_profiles, outputs, output_lens, output_das = batch
-        context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics = batch
+        context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics, floor_labels = batch
 
         # feed_dict = {self.input_contexts: context, self.context_lens:context_lens,
         #              self.floors: floors, self.topics:topics, self.my_profile: my_profiles,
@@ -479,6 +484,7 @@ class KgRnnCVAE(BaseTFModel):
                      self.floors: floors, self.output_tokens: outputs,
                      self.output_das: output_das, self.output_lens: output_lens,
                      self.paragraph_topics: paragraph_topics,
+                     self.floor_labels: floor_labels, 
                      self.use_prior: use_prior}
 
         if repeat > 1:

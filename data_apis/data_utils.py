@@ -81,7 +81,7 @@ class LongDataLoader(object):
                np.random.shuffle(new_grids)
             self.grid_indexes.extend(new_grids)
 
-        self.num_batch = 1. #len(self.grid_indexes) #TODO fix this
+        self.num_batch = len(self.grid_indexes) #TODO fix this. make 1. when just trying out
         print("%s begins with %d batches with %d left over samples" % (self.name, self.num_batch, left_over))
 
     def next_batch(self):
@@ -189,6 +189,7 @@ class SWDADataLoader(LongDataLoader):
         # ot_profiles = np.array([meta[1-out_floors[idx]] for idx, meta in enumerate(meta_rows)])
         vec_paragraph_topics = np.array(meta_rows)
         vec_context_lens = np.array(context_lens)
+        vec_out_floors = np.array(out_floors)
         vec_context = np.zeros((self.batch_size, np.max(vec_context_lens), self.max_utt_size), dtype=np.int32)
         vec_floors = np.zeros((self.batch_size, np.max(vec_context_lens)), dtype=np.int32)
         vec_outs = np.zeros((self.batch_size, np.max(out_lens)), dtype=np.int32)
@@ -200,8 +201,10 @@ class SWDADataLoader(LongDataLoader):
             vec_floors[b_id, 0:vec_context_lens[b_id]] = floors[b_id]
             vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id])
 
+        print vec_floors.shape
+
         # return vec_context, vec_context_lens, vec_floors, topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
-        return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das, vec_paragraph_topics
+        return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das, vec_paragraph_topics, vec_out_floors
 
 
 
