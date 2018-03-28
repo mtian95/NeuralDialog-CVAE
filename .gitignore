@@ -107,7 +107,6 @@ working
 *.pyc
 working/
 *.mm
-*.npy
 full_swda_clean_42da_sentiment_dialog_corpus.p
 *.bz2
 *.zip
