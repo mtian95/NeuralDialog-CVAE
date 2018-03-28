@@ -3,7 +3,7 @@
 
 class KgCVAEConfig(object):
     description= None
-    use_hcf = False  # use dialog act in training (if turn off kgCVAE -> CVAE)
+    use_hcf = True  # use dialog act in training (if turn off kgCVAE -> CVAE)
     update_limit = 3000  # the number of mini-batch before evaluating the model
 
     # how to encode utterance.
@@ -45,6 +45,9 @@ class KgCVAEConfig(object):
     max_epoch = 1  # max number of epoch of training # TODO change this back to not 1 (60)
 
     grad_noise = 0.0  # inject gradient noise?
+
+    # Topic model related
+    num_topics = 100
 
 
 

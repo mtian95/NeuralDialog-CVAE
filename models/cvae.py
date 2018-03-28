@@ -144,10 +144,10 @@ class KgRnnCVAE(BaseTFModel):
         self.vocab = api.vocab
         self.rev_vocab = api.rev_vocab
         self.vocab_size = len(self.vocab)
-        self.topic_vocab = api.topic_vocab
-        self.topic_vocab_size = len(self.topic_vocab)
-        self.da_vocab = api.dialog_act_vocab
-        self.da_vocab_size = len(self.da_vocab)
+        # self.topic_vocab = api.topic_vocab
+        # self.topic_vocab_size = len(self.topic_vocab) 
+        # self.da_vocab = api.dialog_act_vocab 
+        # self.da_vocab_size = len(self.da_vocab) 
         self.sess = sess
         self.scope = scope
         self.max_utt_len = config.max_utt_len
@@ -156,21 +156,23 @@ class KgRnnCVAE(BaseTFModel):
         self.context_cell_size = config.cxt_cell_size
         self.sent_cell_size = config.sent_cell_size
         self.dec_cell_size = config.dec_cell_size
+        self.num_topics = config.num_topics
 
         with tf.name_scope("io"):
             # all dialog context and known attributes
             self.input_contexts = tf.placeholder(dtype=tf.int32, shape=(None, None, self.max_utt_len), name="dialog_context")
-            self.floors = tf.placeholder(dtype=tf.int32, shape=(None, None), name="floor")
+            self.floors = tf.placeholder(dtype=tf.float32, shape=(None, None), name="floor") # TODO float
             self.context_lens = tf.placeholder(dtype=tf.int32, shape=(None,), name="context_lens")
-            self.topics = tf.placeholder(dtype=tf.int32, shape=(None,), name="topics")
-            self.my_profile = tf.placeholder(dtype=tf.float32, shape=(None, 4), name="my_profile")
-            self.ot_profile = tf.placeholder(dtype=tf.float32, shape=(None, 4), name="ot_profile")
+            self.paragraph_topics = tf.placeholder(dtype=tf.float32, shape=(None,self.num_topics), name="paragraph_topics") 
+            # self.topics = tf.placeholder(dtype=tf.int32, shape=(None,), name="topics")
+            # self.my_profile = tf.placeholder(dtype=tf.float32, shape=(None, 4), name="my_profile")
+            # self.ot_profile = tf.placeholder(dtype=tf.float32, shape=(None, 4), name="ot_profile")
 
             # target response given the dialog context
             self.output_tokens = tf.placeholder(dtype=tf.int32, shape=(None, None), name="output_token")
             self.output_lens = tf.placeholder(dtype=tf.int32, shape=(None,), name="output_lens")
-            self.output_das = tf.placeholder(dtype=tf.int32, shape=(None,), name="output_dialog_acts")
-
+            self.output_das = tf.placeholder(dtype=tf.float32, shape=(None,self.num_topics), name="output_dialog_acts") 
+            
             # optimization related variables
             self.learning_rate = tf.Variable(float(config.init_lr), trainable=False, name="learning_rate")
             self.learning_rate_decay_op = self.learning_rate.assign(tf.multiply(self.learning_rate, config.lr_decay))
@@ -182,19 +184,18 @@ class KgRnnCVAE(BaseTFModel):
         batch_size = array_ops.shape(self.input_contexts)[0]
 
         # Make embeddings for topics, dialog acts, and words
-        # TODO: is self.topics a list of ints representing topics? when is t_embedding learned?
         # vector_version_of_word_ids = embedding_ops.embedding_lookup(variable_with_words_and_their_ids, tensor_with_word_ids)
-        with variable_scope.variable_scope("topicEmbedding"):
-            t_embedding = tf.get_variable("embedding", [self.topic_vocab_size, config.topic_embed_size], dtype=tf.float32)
-            topic_embedding = embedding_ops.embedding_lookup(t_embedding, self.topics)
+        # with variable_scope.variable_scope("topicEmbedding"):
+        #     t_embedding = tf.get_variable("embedding", [self.topic_vocab_size, config.topic_embed_size], dtype=tf.float32)
+        #     topic_embedding = embedding_ops.embedding_lookup(t_embedding, self.topics)
 
-        if config.use_hcf:
-            with variable_scope.variable_scope("dialogActEmbedding"):
-                d_embedding = tf.get_variable("embedding", [self.da_vocab_size, config.da_embed_size], dtype=tf.float32)
-                da_embedding = embedding_ops.embedding_lookup(d_embedding, self.output_das)
+        # if config.use_hcf:
+        #     with variable_scope.variable_scope("dialogActEmbedding"):
+        #         d_embedding = tf.get_variable("embedding", [self.da_vocab_size, config.da_embed_size], dtype=tf.float32)
+                # da_embedding = embedding_ops.embedding_lookup(d_embedding, self.output_das)
 
         with variable_scope.variable_scope("wordEmbedding"):
-            # TODO what is this? how is this trained? 
+            # TODO does this use the int representations of the words built in corpus.py
             self.embedding = tf.get_variable("embedding", [self.vocab_size, config.embed_size], dtype=tf.float32)
             embedding_mask = tf.constant([0 if i == 0 else 1 for i in range(self.vocab_size)], dtype=tf.float32,
                                          shape=[self.vocab_size, 1])
@@ -203,8 +204,6 @@ class KgRnnCVAE(BaseTFModel):
             # embed the input
             input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
             # reshape embedding. -1 means that the first dimension can be whatever necessary to make the other 2 dimensions work w/the data 
-
-            input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
             input_embedding = tf.reshape(input_embedding, [-1, self.max_utt_len, config.embed_size])
             output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens)
 
@@ -218,7 +217,7 @@ class KgRnnCVAE(BaseTFModel):
                 output_embedding, _ = get_rnn_encode(output_embedding, sent_cell, self.output_lens,
                                                      scope="sent_rnn", reuse=True)
 
-            # makes a BiRNN network TODO why do you need output embedding w/BiRNN?
+            # makes a BiRNN network
             elif config.sent_type == "bi_rnn":
                 fwd_sent_cell = self.get_rnncell("gru", self.sent_cell_size, keep_prob=1.0, num_layer=1)
                 bwd_sent_cell = self.get_rnncell("gru", self.sent_cell_size, keep_prob=1.0, num_layer=1)
@@ -227,16 +226,19 @@ class KgRnnCVAE(BaseTFModel):
             else:
                 raise ValueError("Unknown sent_type. Must be one of [bow, rnn, bi_rnn]")
 
-            # reshape input into dialogs. TODO what does this do with the max_dialog_len?
+            # reshape input into dialogs.
             input_embedding = tf.reshape(input_embedding, [-1, max_dialog_len, sent_size])
             if config.keep_prob < 1.0:
                 input_embedding = tf.nn.dropout(input_embedding, config.keep_prob)
 
             # convert floors into 1 hot
-            floor_one_hot = tf.one_hot(tf.reshape(self.floors, [-1]), depth=2, dtype=tf.float32)
-            floor_one_hot = tf.reshape(floor_one_hot, [-1, max_dialog_len, 2])
+            # TODO do we want this one hot? if so, convert floors back into int32
+            # floor_one_hot = tf.one_hot(tf.reshape(self.floors, [-1]), depth=2, dtype=tf.float32)
+            # floor_one_hot = tf.reshape(floor_one_hot, [-1, max_dialog_len, 2])
+            floor = tf.reshape(self.floors, [-1, max_dialog_len, 1])
 
-            joint_embedding = tf.concat([input_embedding, floor_one_hot], 2, "joint_embedding")
+            # joint_embedding = tf.concat([input_embedding, floor_one_hot], 2, "joint_embedding")
+            joint_embedding = tf.concat([input_embedding, floor], 2, "joint_embedding")
 
         with variable_scope.variable_scope("contextRNN"):
             enc_cell = self.get_rnncell(config.cell_type, self.context_cell_size, keep_prob=1.0, num_layer=config.num_layer)
@@ -257,18 +259,17 @@ class KgRnnCVAE(BaseTFModel):
                     enc_last_state = enc_last_state.h
 
         # combine with other attributes
-        # TODO confused about what the attribute fc1 really does
         if config.use_hcf:
-            attribute_embedding = da_embedding
+            # TODO is this reshape ok?
+            attribute_embedding = tf.reshape(self.output_das, [-1, self.num_topics])# da_embedding 
             attribute_fc1 = layers.fully_connected(attribute_embedding, 30, activation_fn=tf.tanh, scope="attribute_fc1")
 
-        # conditions include topic and rnn of all previous birnn results and metadata about the two people
-        cond_list = [topic_embedding, self.my_profile, self.ot_profile, enc_last_state]
-        cond_embedding = tf.concat(cond_list, 1)
 
-        # if use_hcf, include the attribute
-        cond_list = [topic_embedding, self.my_profile, self.ot_profile, enc_last_state]
-        cond_embedding = tf.concat(cond_list, 1)
+        # conditions include topic and rnn of all previous birnn results and metadata about the two people
+        # cond_list = [topic_embedding, self.my_profile, self.ot_profile, enc_last_state]
+        # NOTE
+        cond_list = [self.paragraph_topics, enc_last_state]
+        cond_embedding = tf.concat(cond_list, 1) #float32
 
         with variable_scope.variable_scope("recognitionNetwork"):
             if config.use_hcf:
@@ -276,7 +277,9 @@ class KgRnnCVAE(BaseTFModel):
             else:
                 recog_input = tf.concat([cond_embedding, output_embedding], 1)
             self.recog_mulogvar = recog_mulogvar = layers.fully_connected(recog_input, config.latent_size * 2, activation_fn=None, scope="muvar")
+            # mu and logvar are both vectors of size latent_size
             recog_mu, recog_logvar = tf.split(recog_mulogvar, 2, axis=1)
+
 
         with variable_scope.variable_scope("priorNetwork"):
             # P(XYZ)=P(Z|X)P(X)P(Y|X,Z)
@@ -286,37 +289,54 @@ class KgRnnCVAE(BaseTFModel):
                                                     scope="muvar")
             prior_mu, prior_logvar = tf.split(prior_mulogvar, 2, axis=1)
 
+            # seems like use_prior = False when training, = True when testing (because then there's no recog)
             # use sampled Z or posterior Z
             latent_sample = tf.cond(self.use_prior,
                                     lambda: sample_gaussian(prior_mu, prior_logvar),
                                     lambda: sample_gaussian(recog_mu, recog_logvar))
 
         with variable_scope.variable_scope("generationNetwork"):
-            gen_inputs = tf.concat([cond_embedding, latent_sample], 1)
+            gen_inputs = tf.concat([cond_embedding, latent_sample], 1) #float32
 
             # BOW loss
+            # NOTE here's the bow predicted output
             bow_fc1 = layers.fully_connected(gen_inputs, 400, activation_fn=tf.tanh, scope="bow_fc1")
             if config.keep_prob < 1.0:
                 bow_fc1 = tf.nn.dropout(bow_fc1, config.keep_prob)
             self.bow_logits = layers.fully_connected(bow_fc1, self.vocab_size, activation_fn=None, scope="bow_project")
 
-            # Y loss
+
+            # Predicting Y (topic) 
             if config.use_hcf:
                 meta_fc1 = layers.fully_connected(gen_inputs, 400, activation_fn=tf.tanh, scope="meta_fc1")
                 if config.keep_prob <1.0:
                     meta_fc1 = tf.nn.dropout(meta_fc1, config.keep_prob)
-                self.da_logits = layers.fully_connected(meta_fc1, self.da_vocab_size, scope="da_project")
+                # self.da_logits = layers.fully_connected(meta_fc1, self.da_vocab_size, scope="da_project")
+                self.da_logits = layers.fully_connected(meta_fc1, self.num_topics, scope="da_project") # float32
+
                 da_prob = tf.nn.softmax(self.da_logits)
-                pred_attribute_embedding = tf.matmul(da_prob, d_embedding)
+                pred_attribute_embedding = da_prob # NOTE change the name of this to predicted sentence topic
+                # pred_attribute_embedding = tf.matmul(da_prob, d_embedding)
+
+                # TODO change this to take in the correct sentence topic 
+                # currently, attribute_embedding = da_embedding = self.output_das embedded
                 if forward:
                     selected_attribute_embedding = pred_attribute_embedding
                 else:
                     selected_attribute_embedding = attribute_embedding
                 dec_inputs = tf.concat([gen_inputs, selected_attribute_embedding], 1)
+
+            # if use_hcf not on, the model won't predict the Y
             else:
-                self.da_logits = tf.zeros((batch_size, self.da_vocab_size))
+                # self.da_logits = tf.zeros((batch_size, self.da_vocab_size))
+                self.da_logits = tf.zeros((batch_size, self.num_topics))
                 dec_inputs = gen_inputs
                 selected_attribute_embedding = None
+
+
+            # Predicting whether or not end of paragraph
+            # NOTE this may not be correct
+            self.paragraph_end_logits = layers.fully_connected(gen_inputs, 1, activation_fn=tf.tanh, scope="paragraph_end_fc1") # float32
 
             # Decoder
             if config.num_layer > 1:
@@ -325,6 +345,7 @@ class KgRnnCVAE(BaseTFModel):
                     temp_init = layers.fully_connected(dec_inputs, self.dec_cell_size, activation_fn=None,
                                                         scope="init_state-%d" % i)
                     if config.cell_type == 'lstm':
+                        # initializer thing for lstm
                         temp_init = rnn_cell.LSTMStateTuple(temp_init, temp_init)
 
                     dec_init_state.append(temp_init)
@@ -338,6 +359,7 @@ class KgRnnCVAE(BaseTFModel):
 
         with variable_scope.variable_scope("decoder"):
             dec_cell = self.get_rnncell(config.cell_type, self.dec_cell_size, config.keep_prob, config.num_layer)
+            # projects into thing of vocab size. TODO no softmax?
             dec_cell = OutputProjectionWrapper(dec_cell, self.vocab_size)
 
             if forward:
@@ -360,6 +382,7 @@ class KgRnnCVAE(BaseTFModel):
 
                 # apply word dropping. Set dropped word to 0
                 if config.dec_keep_prob < 1.0:
+                    # get make of keep/throw-away
                     keep_mask = tf.less_equal(tf.random_uniform((batch_size, max_out_len-1), minval=0.0, maxval=1.0),
                                               config.dec_keep_prob)
                     keep_mask = tf.expand_dims(tf.to_float(keep_mask), 2)
@@ -381,9 +404,13 @@ class KgRnnCVAE(BaseTFModel):
 
         if not forward:
             with variable_scope.variable_scope("loss"):
-                labels = self.output_tokens[:, 1:]
+
+                # NOTE the correct things are self.output_tokens[:, 1:], self.output_das
+
+                labels = self.output_tokens[:, 1:] # correct word tokens
                 label_mask = tf.to_float(tf.sign(labels))
 
+                # Loss between words
                 rc_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=dec_outs, labels=labels)
                 rc_loss = tf.reduce_sum(rc_loss * label_mask, reduction_indices=1)
                 self.avg_rc_loss = tf.reduce_mean(rc_loss)
@@ -391,15 +418,23 @@ class KgRnnCVAE(BaseTFModel):
                 self.rc_ppl = tf.exp(tf.reduce_sum(rc_loss) / tf.reduce_sum(label_mask))
 
                 """ as n-trial multimodal distribution. """
+                # BOW loss
                 tile_bow_logits = tf.tile(tf.expand_dims(self.bow_logits, 1), [1, max_out_len - 1, 1])
                 bow_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tile_bow_logits, labels=labels) * label_mask
                 bow_loss = tf.reduce_sum(bow_loss, reduction_indices=1)
                 self.avg_bow_loss  = tf.reduce_mean(bow_loss)
 
-                # reconstruct the meta info about X
+                # Predict 0/1 (1 = last sentence in paragraph)
+                # TODO need to reduce mean?
+                self.end_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+                            labels = self.floors, #TODO why did i cast this 
+                            logits = self.paragraph_end_logits)
+
+                # Topic prediction loss 
                 if config.use_hcf:
-                    da_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.da_logits, labels=self.output_das)
+                    da_loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=self.output_das) 
                     self.avg_da_loss = tf.reduce_mean(da_loss)
+                    # da_loss = Multinomial(total_count=1., logits=logits)
                 else:
                     self.avg_da_loss = 0.0
 
@@ -412,7 +447,8 @@ class KgRnnCVAE(BaseTFModel):
 
                 self.kl_w = kl_weights
                 self.elbo = self.avg_rc_loss + kl_weights * self.avg_kld
-                aug_elbo = self.avg_bow_loss + self.avg_da_loss + self.elbo
+                # NOTE here's the final loss
+                aug_elbo = self.avg_bow_loss + self.avg_da_loss + self.elbo + self.end_loss
 
                 tf.summary.scalar("da_loss", self.avg_da_loss)
                 tf.summary.scalar("rc_loss", self.avg_rc_loss)
@@ -431,12 +467,22 @@ class KgRnnCVAE(BaseTFModel):
         self.saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
 
     def batch_2_feed(self, batch, global_t, use_prior, repeat=1):
-        context, context_lens, floors, topics, my_profiles, ot_profiles, outputs, output_lens, output_das = batch
+        # NOTE here's where the outputs are fed in
+        # context, context_lens, floors, topics, my_profiles, ot_profiles, outputs, output_lens, output_das = batch
+        context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics = batch
+
+        # feed_dict = {self.input_contexts: context, self.context_lens:context_lens,
+        #              self.floors: floors, self.topics:topics, self.my_profile: my_profiles,
+        #              self.ot_profile: ot_profiles, self.output_tokens: outputs,
+        #              self.output_das: output_das, self.output_lens: output_lens,
+        #              self.use_prior: use_prior}
+
         feed_dict = {self.input_contexts: context, self.context_lens:context_lens,
-                     self.floors: floors, self.topics:topics, self.my_profile: my_profiles,
-                     self.ot_profile: ot_profiles, self.output_tokens: outputs,
+                     self.floors: floors, self.output_tokens: outputs,
                      self.output_das: output_das, self.output_lens: output_lens,
+                     self.paragraph_topics: paragraph_topics,
                      self.use_prior: use_prior}
+
         if repeat > 1:
             tiled_feed_dict = {}
             for key, val in feed_dict.items():
@@ -469,6 +515,7 @@ class KgRnnCVAE(BaseTFModel):
             if update_limit is not None and local_t >= update_limit:
                 break
             feed_dict = self.batch_2_feed(batch, global_t, use_prior=False)
+            # NOTE this is when losses are actually calculated and optimization is done
             _, sum_op, elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss = sess.run([self.train_ops, self.summary_op,
                                                                          self.elbo, self.avg_bow_loss,
                                                                          self.avg_rc_loss, self.rc_ppl, self.avg_kld],
@@ -529,6 +576,7 @@ class KgRnnCVAE(BaseTFModel):
                                      [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses], "")
         return avg_losses[0]
 
+    # TODO understand this section
     def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout):
         local_t = 0
         recall_bleus = []
@@ -539,10 +587,13 @@ class KgRnnCVAE(BaseTFModel):
             if batch is None or (num_batch is not None and local_t > num_batch):
                 break
             feed_dict = self.batch_2_feed(batch, None, use_prior=True, repeat=repeat)
+            # NOTE when testing, this is where we get the predictions
             word_outs, da_logits = sess.run([self.dec_out_words, self.da_logits], feed_dict)
+            # splits into 5 equal pieces
             sample_words = np.split(word_outs, repeat, axis=0)
             sample_das = np.split(da_logits, repeat, axis=0)
 
+            # lists of true answers
             true_floor = feed_dict[self.floors]
             true_srcs = feed_dict[self.input_contexts]
             true_src_lens = feed_dict[self.context_lens]
@@ -556,7 +607,7 @@ class KgRnnCVAE(BaseTFModel):
                     print("%.2f >> " % (test_feed.ptr / float(test_feed.num_batch))),
 
             for b_id in range(test_feed.batch_size):
-                # print the dialog context
+                # print the real/true dialog context
                 dest.write("Batch %d index %d of topic %s\n" % (local_t, b_id, self.topic_vocab[true_topics[b_id]]))
                 start = np.maximum(0, true_src_lens[b_id]-5)
                 for t_id in range(start, true_srcs.shape[1], 1):

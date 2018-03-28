@@ -8,6 +8,7 @@ import os
 import sys
 from gensim.models import LdaModel
 from gensim.corpora import Dictionary
+import keras 
 
 
 
@@ -31,7 +32,9 @@ class SWDADialogCorpus(object):
         # self.utt_id = 2
         self.utt_id = 1 
         self.sil_utt = ["<s>", "<sil>", "</s>"]
+        
         data = pkl.load(open(self._path, "rb"))
+
         self.train_corpus = self.process(data["train"])
         self.valid_corpus = self.process(data["valid"])
         self.test_corpus = self.process(data["test"])
@@ -53,7 +56,7 @@ class SWDADialogCorpus(object):
         for l in data:
             # lower_utts = list of tokenized version of the strings
             lower_utts = [(["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"])
-                          for caller, utt, feat in l["utts"]]
+                          for utt in l] # for utt in l['utts']]
             all_lenes.extend([len(u) for u in lower_utts])
             # lower_utts = [(caller, ["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"], feat)
                           # for caller, utt, feat in l["utts"]]

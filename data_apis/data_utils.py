@@ -35,11 +35,15 @@ class LongDataLoader(object):
         self.prev_alive_size = batch_size
 
         # create batch indexes
+        print "data size", self.data_size
+        print "batch size", self.batch_size
+
         temp_num_batch = self.data_size // batch_size
         self.batch_indexes = []
         # batch_indexes = list of lists of the indices in each batch. one list for each batch. 
         for i in range(temp_num_batch):
             self.batch_indexes.append(self.indexes[i * self.batch_size:(i + 1) * self.batch_size])
+
 
 
         left_over = self.data_size-temp_num_batch*batch_size
@@ -81,6 +85,8 @@ class LongDataLoader(object):
         print("%s begins with %d batches with %d left over samples" % (self.name, self.num_batch, left_over))
 
     def next_batch(self):
+        print "pointer value", self.ptr
+        print "length of grid_indexes", len(self.grid_indexes)
         if self.ptr < self.num_batch:
             current_grid = self.grid_indexes[self.ptr]
             if self.ptr > 0:
@@ -181,6 +187,7 @@ class SWDADataLoader(LongDataLoader):
 
         # my_profiles = np.array([meta[out_floors[idx]] for idx, meta in enumerate(meta_rows)])
         # ot_profiles = np.array([meta[1-out_floors[idx]] for idx, meta in enumerate(meta_rows)])
+        vec_paragraph_topics = np.array(meta_rows)
         vec_context_lens = np.array(context_lens)
         vec_context = np.zeros((self.batch_size, np.max(vec_context_lens), self.max_utt_size), dtype=np.int32)
         vec_floors = np.zeros((self.batch_size, np.max(vec_context_lens)), dtype=np.int32)
@@ -194,7 +201,7 @@ class SWDADataLoader(LongDataLoader):
             vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id])
 
         # return vec_context, vec_context_lens, vec_floors, topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
-        return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das
+        return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das, vec_paragraph_topics
 
 
 

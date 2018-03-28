@@ -2,6 +2,7 @@
 
 import os
 import time
+import sys
 
 import numpy as np
 import tensorflow as tf
@@ -11,18 +12,21 @@ from config_utils import KgCVAEConfig as Config
 from data_apis.corpus import SWDADialogCorpus
 from data_apis.data_utils import SWDADataLoader
 from models.cvae import KgRnnCVAE
+from ldamodel import LDAModel
 
 # constants
 tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
-tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
+# tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
 # tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") # TODO redirect this to the correct corpus
+tf.app.flags.DEFINE_string("data_dir", "data/dbpedia.p", "Raw data directory.") # TODO redirect this to the correct corpus
 tf.app.flags.DEFINE_string("work_dir", "working", "Experiment results directory.")
 tf.app.flags.DEFINE_bool("equal_batch", True, "Make each batch has similar length.")
 tf.app.flags.DEFINE_bool("resume", False, "Resume from previous")
 tf.app.flags.DEFINE_bool("forward_only", False, "Only do decoding")
 tf.app.flags.DEFINE_bool("save_model", True, "Create checkpoints")
 tf.app.flags.DEFINE_string("test_path", "run1500783422", "the dir to load checkpoint for forward only")
-
+tf.app.flags.DEFINE_string("lda_model_path", "lda/lda_model", "the path to pretrained LDA model")
+tf.app.flags.DEFINE_string("id2word_path", "lda/id2word_wiki.txt", "the path to the id2word dict for LDA model")
 tf.app.flags.DEFINE_string("vocab_dict_path", "data/vocab", "Vocab files directory.")
 
 FLAGS = tf.app.flags.FLAGS
@@ -46,11 +50,15 @@ def main():
 
     pp(config)
 
+    # LDA Model
+    ldamodel = LDAModel(config, trained_model_path=FLAGS.lda_model_path, id2word_path=FLAGS.id2word_path)
+
     # get data set
-    # TODO add more to this init
-    api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size, vocab_dict_path=FLAGS.vocab_dict_path)
+    api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size, vocab_dict_path=FLAGS.vocab_dict_path,
+                            lda_model=ldamodel)
     dial_corpus = api.get_dialog_corpus()
     meta_corpus = api.get_meta_corpus()
+
 
     train_meta, valid_meta, test_meta = meta_corpus.get("train"), meta_corpus.get("valid"), meta_corpus.get("test")
     train_dial, valid_dial, test_dial = dial_corpus.get("train"), dial_corpus.get("valid"), dial_corpus.get("test")
@@ -120,8 +128,8 @@ def main():
                 if train_feed.num_batch is None or train_feed.ptr >= train_feed.num_batch:
                     train_feed.epoch_init(config.batch_size, config.backward_size,
                                           config.step_size, shuffle=True)
-                global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)
 
+                global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)
 
                 # begin validation and testing
                 valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
