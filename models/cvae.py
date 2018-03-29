@@ -563,6 +563,7 @@ class KgRnnCVAE(BaseTFModel):
         rc_ppls = []
         bow_losses = []
         kl_losses = []
+        end_losses = []
 
         while True:
             batch = valid_feed.next_batch()
@@ -570,20 +571,21 @@ class KgRnnCVAE(BaseTFModel):
                 break
             feed_dict = self.batch_2_feed(batch, None, use_prior=False, repeat=1)
 
-            elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss = sess.run(
+            elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss, end_loss = sess.run(
                 [self.elbo, self.avg_bow_loss, self.avg_rc_loss,
-                 self.rc_ppl, self.avg_kld], feed_dict)
+                 self.rc_ppl, self.avg_kld, self.avg_end_loss], feed_dict)
             elbo_losses.append(elbo_loss)
             rc_losses.append(rc_loss)
             rc_ppls.append(rc_ppl)
             bow_losses.append(bow_loss)
             kl_losses.append(kl_loss)
+            end_losses.append(end_loss)
 
-        avg_losses = self.print_loss(name, ["elbo_loss", "bow_loss", "rc_loss", "rc_peplexity", "kl_loss"],
-                                     [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses], "")
+        avg_losses = self.print_loss(name, ["elbo_loss", "bow_loss", "rc_loss", "rc_peplexity", "kl_loss", "paragraph_end_loss"],
+                                     [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses, end_losses], "")
         return avg_losses[0]
 
-    # TODO understand and fix this section
+    # TODO how do you feed back in predicted sentence end as meta? Also get it to stop based on paragraph end pred
     def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout):
         local_t = 0
         recall_bleus = []
@@ -629,7 +631,6 @@ class KgRnnCVAE(BaseTFModel):
                 local_tokens = []
                 for r_id in range(repeat):
                     pred_outs = sample_words[r_id]
-                    print pred_outs
                     sys.exit()
                     pred_da = sample_das[r_id] # np.argmax(sample_das[r_id], axis=1)[0]
                     pred_tokens = [self.vocab[e] for e in pred_outs[b_id].tolist() if e != self.eos_id and e != 0]
