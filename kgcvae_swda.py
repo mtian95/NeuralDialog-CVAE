@@ -18,7 +18,7 @@ from ldamodel import LDAModel
 tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
 # tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
 # tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") # TODO redirect this to the correct corpus
-tf.app.flags.DEFINE_string("data_dir", "data/dbpedia.p", "Raw data directory.") # TODO redirect this to the correct corpus
+tf.app.flags.DEFINE_string("data_dir", "data/dbpedia_small.p", "Raw data directory.") # TODO redirect this to the correct corpus
 tf.app.flags.DEFINE_string("work_dir", "working", "Experiment results directory.")
 tf.app.flags.DEFINE_bool("equal_batch", True, "Make each batch has similar length.")
 tf.app.flags.DEFINE_bool("resume", False, "Resume from previous")
@@ -28,6 +28,7 @@ tf.app.flags.DEFINE_string("test_path", "run1500783422", "the dir to load checkp
 tf.app.flags.DEFINE_string("lda_model_path", "lda/lda_model", "the path to pretrained LDA model")
 tf.app.flags.DEFINE_string("id2word_path", "lda/id2word_wiki.txt", "the path to the id2word dict for LDA model")
 tf.app.flags.DEFINE_string("vocab_dict_path", "data/vocab", "Vocab files directory.")
+tf.app.flags.DEFINE_bool("use_imdb", False, "whether to use the keras imdb dataset")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -55,7 +56,7 @@ def main():
 
     # get data set
     api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size, vocab_dict_path=FLAGS.vocab_dict_path,
-                            lda_model=ldamodel)
+                            lda_model=ldamodel, imdb=FLAGS.use_imdb)
     dial_corpus = api.get_dialog_corpus()
     meta_corpus = api.get_meta_corpus()
 
@@ -132,13 +133,13 @@ def main():
                 global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)
 
                 # begin validation and testing
-                # valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
-                #                       valid_config.step_size, shuffle=False, intra_shuffle=False)
-                # valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
+                valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
+                                      valid_config.step_size, shuffle=False, intra_shuffle=False)
+                valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
 
-                # test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
-                #                      test_config.step_size, shuffle=True, intra_shuffle=False)
-                # test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
+                test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
+                                     test_config.step_size, shuffle=True, intra_shuffle=False)
+                test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
 
 
                 done_epoch = epoch + 1

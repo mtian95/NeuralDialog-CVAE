@@ -27,7 +27,7 @@ class KgCVAEConfig(object):
     dec_cell_size = 400  # response decoder hidden size
     backward_size = 10  # how many utterance kept in the context window
     step_size = 1  # internal usage
-    max_utt_len = 40  # max number of words in an utterance
+    max_utt_len = 25  # max number of words in an utterance
     num_layer = 1  # number of context RNN layers
 
     # Optimization parameters
