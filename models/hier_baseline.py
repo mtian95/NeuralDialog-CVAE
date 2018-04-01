@@ -111,13 +111,13 @@ class HierBaseline(BaseTFModel):
 
 			# predict whether the next sentence is the last one
 			# TODO do we want this?
-			self.paragraph_end_logits = layers.fully_connected(gen_inputs, 1, activation_fn=tf.tanh, scope="paragraph_end_fc1")
+			self.paragraph_end_logits = layers.fully_connected(encoded_embedding, 1, activation_fn=tf.tanh, scope="paragraph_end_fc1")
 
 			# Decoder
 			if config.num_layer > 1:
 				dec_init_state = []
 				for i in range(config.num_layer):
-					temp_init = layers.fully_connected(dec_inputs, self.dec_cell_size, activation_fn=None,
+					temp_init = layers.fully_connected(encoded_embedding, self.dec_cell_size, activation_fn=None,
 														scope="init_state-%d" % i)
 					if config.cell_type == 'lstm':
 						# initializer thing for lstm
@@ -127,7 +127,7 @@ class HierBaseline(BaseTFModel):
 
 				dec_init_state = tuple(dec_init_state)
 			else:
-				dec_init_state = layers.fully_connected(dec_inputs, self.dec_cell_size, activation_fn=None,
+				dec_init_state = layers.fully_connected(encoded_embedding, self.dec_cell_size, activation_fn=None,
 														scope="init_state")
 				if config.cell_type == 'lstm':
 					dec_init_state = rnn_cell.LSTMStateTuple(dec_init_state, dec_init_state)
@@ -137,6 +137,8 @@ class HierBaseline(BaseTFModel):
 			dec_cell = self.get_rnncell(config.cell_type, self.dec_cell_size, config.keep_prob, config.num_layer)
 			# projects into thing of vocab size. TODO no softmax?
 			dec_cell = OutputProjectionWrapper(dec_cell, self.vocab_size)
+
+			selected_attribute_embedding = None
 
 			if forward:
 				loop_func = decoder_fn_lib.context_decoder_fn_inference(None, dec_init_state, embedding,
@@ -205,12 +207,14 @@ class HierBaseline(BaseTFModel):
 				tf.summary.scalar("rc_loss", self.avg_rc_loss)
 				tf.summary.scalar("paragraph_end_loss", self.avg_end_loss)
 
-			self.optimize(sess, config, aug_elbo, log_dir)
+				self.summary_op = tf.summary.merge_all()
+
+			self.optimize(sess, config, total_loss, log_dir)
 
 		self.saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
 
 
-	def batch_2_feed(self, batch, global_t, use_prior, repeat=1):
+	def batch_2_feed(self, batch, global_t, repeat=1):
 		context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics, floor_labels = batch
 
 		feed_dict = {self.input_contexts: context, self.context_lens:context_lens,
@@ -222,9 +226,10 @@ class HierBaseline(BaseTFModel):
 		if repeat > 1:
 			tiled_feed_dict = {}
 			for key, val in feed_dict.items():
-				if key is self.use_prior:
-					tiled_feed_dict[key] = val
-					continue
+				# todo
+				# if key is self.use_prior:
+				# 	tiled_feed_dict[key] = val
+				# 	continue
 				multipliers = [1]*len(val.shape)
 				multipliers[0] = repeat
 				tiled_feed_dict[key] = np.tile(val, multipliers)
@@ -248,7 +253,7 @@ class HierBaseline(BaseTFModel):
 				break
 			if update_limit is not None and local_t >= update_limit:
 				break
-			feed_dict = self.batch_2_feed(batch, global_t, use_prior=False)
+			feed_dict = self.batch_2_feed(batch, global_t)
 			# NOTE this is when losses are actually calculated and optimization is done
 			_, sum_op, rc_loss, rc_ppl, end_loss= sess.run([self.train_ops, self.summary_op,
 																 self.avg_rc_loss, self.rc_ppl, self.avg_end_loss],
@@ -256,16 +261,15 @@ class HierBaseline(BaseTFModel):
 			self.train_summary_writer.add_summary(sum_op, global_t)
 			rc_ppls.append(rc_ppl)
 			rc_losses.append(rc_loss)
-			kl_losses.append(kl_loss)
 			end_losses.append(end_loss)
 
 			global_t += 1
 			local_t += 1
 
 			if local_t % (train_feed.num_batch / 10) == 0:
-				kl_w = sess.run(self.kl_w, {self.global_t: global_t})
+				# kl_w = sess.run(self.kl_w, {self.global_t: global_t})
 				self.print_loss("%.2f" % (train_feed.ptr / float(train_feed.num_batch)),
-								loss_names, [rc_losses, rc_ppls, end_losses], "kl_w %f" % kl_w)
+								loss_names, [rc_losses, rc_ppls, end_losses], '') 
 
 		# finish epoch!
 		epoch_time = time.time() - start_time
@@ -285,7 +289,7 @@ class HierBaseline(BaseTFModel):
 			batch = valid_feed.next_batch()
 			if batch is None:
 				break
-			feed_dict = self.batch_2_feed(batch, None, use_prior=False, repeat=1)
+			feed_dict = self.batch_2_feed(batch, None, repeat=1)
 
 			rc_loss, rc_ppl, end_loss = sess.run(
 				[self.avg_rc_loss,
@@ -299,7 +303,7 @@ class HierBaseline(BaseTFModel):
 		return avg_losses[0]
 
 
-	def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout):
+	def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout): #todo repeat
 		local_t = 0
 		recall_bleus = []
 		prec_bleus = []
@@ -308,12 +312,13 @@ class HierBaseline(BaseTFModel):
 			batch = test_feed.next_batch()
 			if batch is None or (num_batch is not None and local_t > num_batch):
 				break
-			feed_dict = self.batch_2_feed(batch, None, use_prior=True, repeat=repeat)
+			feed_dict = self.batch_2_feed(batch, None, repeat=repeat)
 			# NOTE when testing, this is where we get the predictions
-			word_outs, da_logits = sess.run([self.dec_out_words, self.da_logits], feed_dict)
+			word_outs = sess.run(self.dec_out_words, feed_dict)
+
 			# splits into 5 equal pieces
-			sample_words = np.split(word_outs, repeat, axis=0)
-			sample_das = np.split(da_logits, repeat, axis=0)
+			print np.array(word_outs).shape # (1, 5, 8)
+			sample_words = np.split(np.array(word_outs), repeat, axis=0)
 
 			# lists of true answers
 			true_floor = feed_dict[self.floors]
@@ -333,15 +338,17 @@ class HierBaseline(BaseTFModel):
 				for t_id in range(start, true_srcs.shape[1], 1):
 					src_str = " ".join([self.vocab[e] for e in true_srcs[b_id, t_id].tolist() if e != 0])
 					dest.write("Src %d-%d: %s\n" % (t_id, true_floor[b_id, t_id], src_str))
+
 				# print the true outputs
 				true_tokens = [self.vocab[e] for e in true_outs[b_id].tolist() if e not in [0, self.eos_id, self.go_id]]
 				true_str = " ".join(true_tokens).replace(" ' ", "'")
-				# da_str = self.da_vocab[true_das[b_id]]
+
 				# print the predicted outputs
 				dest.write("Target >> %s\n" % (true_str))
 				local_tokens = []
 				for r_id in range(repeat):
 					pred_outs = sample_words[r_id]
+
 					pred_tokens = [self.vocab[e] for e in pred_outs[b_id].tolist() if e != self.eos_id and e != 0]
 					pred_str = " ".join(pred_tokens).replace(" ' ", "'")
 					dest.write("Sample %d >> %s\n" % (r_id, pred_str))

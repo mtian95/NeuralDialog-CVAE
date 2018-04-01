@@ -33,7 +33,7 @@ tf.app.flags.DEFINE_bool("use_imdb", False, "whether to use the keras imdb datas
 FLAGS = tf.app.flags.FLAGS
 
 
-def main():
+def main(model_class, FLAGS):
     # config for training
     config = Config()
 
@@ -80,11 +80,11 @@ def main():
         initializer = tf.random_uniform_initializer(-1.0 * config.init_w, config.init_w)
         scope = "model"
         with tf.variable_scope(scope, reuse=None, initializer=initializer):
-            model = KgRnnCVAE(sess, config, api, log_dir=None if FLAGS.forward_only else log_dir, forward=False, scope=scope)
+            model = model_class(sess, config, api, log_dir=None if FLAGS.forward_only else log_dir, forward=False, scope=scope)
         with tf.variable_scope(scope, reuse=True, initializer=initializer):
-            valid_model = KgRnnCVAE(sess, valid_config, api, log_dir=None, forward=False, scope=scope)
+            valid_model = model_class(sess, valid_config, api, log_dir=None, forward=False, scope=scope)
         with tf.variable_scope(scope, reuse=True, initializer=initializer):
-            test_model = KgRnnCVAE(sess, test_config, api, log_dir=None, forward=True, scope=scope)
+            test_model = model_class(sess, test_config, api, log_dir=None, forward=True, scope=scope)
 
         print("Created computation graphs")
         if api.word2vec is not None and not FLAGS.forward_only:
@@ -191,7 +191,7 @@ if __name__ == "__main__":
         if FLAGS.test_path is None:
             print("Set test_path before forward only")
             exit(1)
-    main()
+    main(KgRnnCVAE, FLAGS)
 
 
 

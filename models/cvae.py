@@ -598,6 +598,7 @@ class KgRnnCVAE(BaseTFModel):
             feed_dict = self.batch_2_feed(batch, None, use_prior=True, repeat=repeat)
             # NOTE when testing, this is where we get the predictions
             word_outs, da_logits = sess.run([self.dec_out_words, self.da_logits], feed_dict)
+
             # splits into 5 equal pieces
             sample_words = np.split(word_outs, repeat, axis=0)
             sample_das = np.split(da_logits, repeat, axis=0)
@@ -631,7 +632,6 @@ class KgRnnCVAE(BaseTFModel):
                 local_tokens = []
                 for r_id in range(repeat):
                     pred_outs = sample_words[r_id]
-                    sys.exit()
                     pred_da = sample_das[r_id] # np.argmax(sample_das[r_id], axis=1)[0]
                     pred_tokens = [self.vocab[e] for e in pred_outs[b_id].tolist() if e != self.eos_id and e != 0]
                     pred_str = " ".join(pred_tokens).replace(" ' ", "'")
