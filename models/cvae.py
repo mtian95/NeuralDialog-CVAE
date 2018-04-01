@@ -429,7 +429,6 @@ class KgRnnCVAE(BaseTFModel):
                             labels = self.floor_labels, 
                             logits = self.paragraph_end_logits)
                 self.avg_end_loss = tf.reduce_mean(end_loss)
-                print "size of end loss", self.avg_end_loss.get_shape()
 
                 # Topic prediction loss 
                 # TODO does this way of doing KL work?
@@ -450,7 +449,6 @@ class KgRnnCVAE(BaseTFModel):
 
                 self.kl_w = kl_weights
                 self.elbo = self.avg_rc_loss + kl_weights * self.avg_kld
-                # NOTE here's the final loss
                 aug_elbo = self.avg_bow_loss + self.avg_da_loss + self.elbo + self.avg_end_loss
 
                 tf.summary.scalar("da_loss", self.avg_da_loss)
@@ -471,7 +469,6 @@ class KgRnnCVAE(BaseTFModel):
         self.saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
 
     def batch_2_feed(self, batch, global_t, use_prior, repeat=1):
-        # NOTE here's where the outputs are fed in
         # context, context_lens, floors, topics, my_profiles, ot_profiles, outputs, output_lens, output_das = batch
         context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics, floor_labels = batch
 
@@ -521,7 +518,6 @@ class KgRnnCVAE(BaseTFModel):
             if update_limit is not None and local_t >= update_limit:
                 break
             feed_dict = self.batch_2_feed(batch, global_t, use_prior=False)
-            # NOTE this is when losses are actually calculated and optimization is done
             _, sum_op, elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss, end_loss= sess.run([self.train_ops, self.summary_op,
                                                                          self.elbo, self.avg_bow_loss,
                                                                          self.avg_rc_loss, self.rc_ppl, self.avg_kld, self.avg_end_loss],
@@ -536,8 +532,6 @@ class KgRnnCVAE(BaseTFModel):
 
             global_t += 1
             local_t += 1
-
-            print(train_feed)
 
             if local_t % (train_feed.num_batch / 10) == 0:
                 kl_w = sess.run(self.kl_w, {self.global_t: global_t})
@@ -596,7 +590,6 @@ class KgRnnCVAE(BaseTFModel):
             if batch is None or (num_batch is not None and local_t > num_batch):
                 break
             feed_dict = self.batch_2_feed(batch, None, use_prior=True, repeat=repeat)
-            # NOTE when testing, this is where we get the predictions
             word_outs, da_logits = sess.run([self.dec_out_words, self.da_logits], feed_dict)
 
             # splits into 5 equal pieces
@@ -617,17 +610,19 @@ class KgRnnCVAE(BaseTFModel):
                     print("%.2f >> " % (test_feed.ptr / float(test_feed.num_batch))),
 
             for b_id in range(test_feed.batch_size):
-                # print the real/true dialog context
+                # true dialog context
                 dest.write("Batch %d index %d " % (local_t, b_id))
                 start = np.maximum(0, true_src_lens[b_id]-5)
                 for t_id in range(start, true_srcs.shape[1], 1):
                     src_str = " ".join([self.vocab[e] for e in true_srcs[b_id, t_id].tolist() if e != 0])
                     dest.write("Src %d-%d: %s\n" % (t_id, true_floor[b_id, t_id], src_str))
-                # print the true outputs
+
+                # true outputs
                 true_tokens = [self.vocab[e] for e in true_outs[b_id].tolist() if e not in [0, self.eos_id, self.go_id]]
                 true_str = " ".join(true_tokens).replace(" ' ", "'")
                 # da_str = self.da_vocab[true_das[b_id]]
-                # print the predicted outputs
+
+                # predicted outputs
                 dest.write("Target >> %s\n" % (true_str))
                 local_tokens = []
                 for r_id in range(repeat):

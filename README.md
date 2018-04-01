@@ -1,3 +1,21 @@
+# Usage V2
+## Train LDA topic model
+Specify the number of topics, number of documents to train on, corpus, and save paths in config_utils.py
+    python lda.py
+This will save a trained lda model to lda_model_save_path + number of docs it was trained on + epoch time of runtime
+
+## Train vanilla RNN baseline
+Not implemented yet
+
+## Train Hierarchical baseline
+    python hier.py
+All config for this model is the same as the config for KgCVAE set in config_utils.py
+will default to training and saving the model into ./working_hier_baseline
+
+
+# ---- Old readme starts here ----
+
+
 # Knowledge-Guided CVAE for dialog generation
 
 We provide a TensorFlow implementation of the CVAE-based dialog model described in

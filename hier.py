@@ -14,12 +14,11 @@ from ldamodel import LDAModel
 
 from kgcvae_swda import main
 
-# flags
+# TODO make these flags not be connected to kgcvae_swda
 # tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
 # # tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
 # # tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") # TODO redirect this to the correct corpus
 # tf.app.flags.DEFINE_string("data_dir", "data/dbpedia_small.p", "Raw data directory.") # TODO redirect this to the correct corpus
-# tf.app.flags.DEFINE_string("work_dir", "working_hier_baseline", "Experiment results directory.")
 # tf.app.flags.DEFINE_bool("equal_batch", True, "Make each batch has similar length.")
 # tf.app.flags.DEFINE_bool("resume", False, "Resume from previous")
 # tf.app.flags.DEFINE_bool("forward_only", False, "Only do decoding")
@@ -30,10 +29,13 @@ from kgcvae_swda import main
 # tf.app.flags.DEFINE_string("vocab_dict_path", "data/vocab", "Vocab files directory.")
 # tf.app.flags.DEFINE_bool("use_imdb", False, "whether to use the keras imdb dataset")
 
-FLAGS = tf.app.flags.FLAGS
 
 
 if __name__ == "__main__":
+
+tf.app.flags.DEFINE_string("work_dir", "working_hier_baseline", "Experiment results directory.")
+FLAGS = tf.app.flags.FLAGS
+
     if FLAGS.forward_only:
         if FLAGS.test_path is None:
             print("Set test_path before forward only")
