@@ -113,3 +113,4 @@ full_swda_clean_42da_sentiment_dialog_corpus.p
 data/dbpedia_csv/
 .ipynb_checkpoints/
 data/test_data.*
+ignore/
