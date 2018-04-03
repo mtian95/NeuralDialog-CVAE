@@ -16,6 +16,7 @@ from models.hier_baseline import HierBaseline
 from ldamodel import LDAModel
 
 # constants
+tf.app.flags.DEFINE_bool("use_hcf", True, "If model_type = kgcvae, this specifies whether to use kgcvae (True) or cvae (False)")
 tf.app.flags.DEFINE_string("model_type", None, "The type of model to train. Can be kgcvae, hierbaseline, rnnbaseline")
 tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
 # tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
@@ -50,15 +51,18 @@ def main():
 
     # config for training
     config = Config()
+    config.use_hcf = FLAGS.use_hcf
 
     # config for validation
     valid_config = Config()
+    valid_config.use_hcf = FLAGS.use_hcf
     valid_config.keep_prob = 1.0
     valid_config.dec_keep_prob = 1.0
     valid_config.batch_size = 60
 
     # configuration for testing
     test_config = Config()
+    test_config.use_hcf = FLAGS.use_hcf
     test_config.keep_prob = 1.0
     test_config.dec_keep_prob = 1.0
     test_config.batch_size = 1
