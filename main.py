@@ -10,9 +10,10 @@ from beeprint import pp
 
 from config_utils import KgCVAEConfig as Config
 from data_apis.corpus import SWDADialogCorpus
-from data_apis.data_utils import SWDADataLoader
+from data_apis.data_utils import SWDADataLoader, RNNDataLoader
 from models.cvae import KgRnnCVAE
 from models.hier_baseline import HierBaseline
+from models.rnn_baseline import RNNBaseline
 from ldamodel import LDAModel
 
 # constants
@@ -37,18 +38,6 @@ FLAGS = tf.app.flags.FLAGS
 
 
 def main():
-    # which model to run
-    if FLAGS.model_type is None:
-        raise ValueError("Must give a model_type (kgcvae, hierbaseline, or rnnbaseline)")
-    elif FLAGS.model_type.lower().strip() == "kgcvae":
-        model_class = KgRnnCVAE
-    elif FLAGS.model_type.lower().strip() == 'hierbaseline':
-        model_class = HierBaseline
-    elif FLAGS.model_type.lower().strip() == 'rnnbaseline':
-        raise NotImplementedError("Haven't made rnn baseline yet")
-    else:
-        raise ValueError("model_type must be kgcvae, hierbaseline, or rnnbaseline")
-
     # config for training
     config = Config()
     config.use_hcf = FLAGS.use_hcf
@@ -69,23 +58,55 @@ def main():
 
     pp(config)
 
+    # which model to run
+    if FLAGS.model_type is None:
+        raise ValueError("Must give a model_type (kgcvae, hierbaseline, or rnnbaseline)")
+    elif FLAGS.model_type.lower().strip() == "kgcvae":
+        model_class = KgRnnCVAE
+        backward_size = config.backward_size
+        # is_rnn_baseline = False
+    elif FLAGS.model_type.lower().strip() == 'hierbaseline':
+        model_class = HierBaseline
+        backward_size = config.backward_size
+        # is_rnn_baseline = False
+    elif FLAGS.model_type.lower().strip() == 'rnnbaseline':
+        model_class = RNNBaseline
+        backward_size = config.rnn_backward_size
+        # is_rnn_baseline = True
+    else:
+        raise ValueError("model_type must be kgcvae, hierbaseline, or rnnbaseline")
+
     # LDA Model
     ldamodel = LDAModel(config, trained_model_path=FLAGS.lda_model_path, id2word_path=FLAGS.id2word_path)
 
     # get data set
     api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size, vocab_dict_path=FLAGS.vocab_dict_path,
                             lda_model=ldamodel, imdb=FLAGS.use_imdb)
-    dial_corpus = api.get_dialog_corpus()
-    meta_corpus = api.get_meta_corpus()
+
+    if model_class == RNNBaseline:
+        baseline_corpus = api.get_baseline_dialog_corpus()
+        meta_corpus = api.get_baseline_meta_corpus()
+
+        train_meta, valid_meta, test_meta = meta_corpus.get("train"), meta_corpus.get("valid"), meta_corpus.get("test")
+        train_dial, valid_dial, test_dial = baseline_corpus.get("train"), baseline_corpus.get("valid"), baseline_corpus.get("test")
+
+        # convert to numeric input outputs that fits into TF models
+        train_feed = RNNDataLoader("Train", train_dial, train_meta, config)
+        valid_feed = RNNDataLoader("Valid", valid_dial, valid_meta, config)
+        test_feed = RNNDataLoader("Test", test_dial, test_meta, config)
 
 
-    train_meta, valid_meta, test_meta = meta_corpus.get("train"), meta_corpus.get("valid"), meta_corpus.get("test")
-    train_dial, valid_dial, test_dial = dial_corpus.get("train"), dial_corpus.get("valid"), dial_corpus.get("test")
+    else:
+        dial_corpus = api.get_dialog_corpus()
+        meta_corpus = api.get_meta_corpus()
 
-    # convert to numeric input outputs that fits into TF models
-    train_feed = SWDADataLoader("Train", train_dial, train_meta, config)
-    valid_feed = SWDADataLoader("Valid", valid_dial, valid_meta, config)
-    test_feed = SWDADataLoader("Test", test_dial, test_meta, config)
+        train_meta, valid_meta, test_meta = meta_corpus.get("train"), meta_corpus.get("valid"), meta_corpus.get("test")
+        train_dial, valid_dial, test_dial = dial_corpus.get("train"), dial_corpus.get("valid"), dial_corpus.get("test")
+
+        # convert to numeric input outputs that fits into TF models
+        train_feed = SWDADataLoader("Train", train_dial, train_meta, config)
+        valid_feed = SWDADataLoader("Valid", valid_dial, valid_meta, config)
+        test_feed = SWDADataLoader("Test", test_dial, test_meta, config)
 
 
     if FLAGS.forward_only or FLAGS.resume: # if you're testing an existing implementation or resuming training
@@ -127,7 +148,6 @@ def main():
             print("Reading dm models parameters from %s" % ckpt.model_checkpoint_path)
             model.saver.restore(sess, ckpt.model_checkpoint_path)
 
-
         # if you're training a model
         if not FLAGS.forward_only: 
 
@@ -145,7 +165,7 @@ def main():
 
                 # begin training
                 if train_feed.num_batch is None or train_feed.ptr >= train_feed.num_batch:
-                    train_feed.epoch_init(config.batch_size, config.backward_size,
+                    train_feed.epoch_init(config.batch_size, backward_size,
                                           config.step_size, shuffle=True)
 
                 global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)

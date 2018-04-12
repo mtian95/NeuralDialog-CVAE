@@ -67,13 +67,11 @@ class HierBaseline(BaseTFModel):
 			# embed the input
 			input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
 			input_embedding = tf.reshape(input_embedding, [-1, self.max_utt_len, config.embed_size])
-			output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens)
 
 			# encode input using RNN w/GRU
 			sent_cell = self.get_rnncell("gru", self.sent_cell_size, config.keep_prob, 1)
 			input_embedding, sent_size = get_rnn_encode(input_embedding, sent_cell, scope="sent_rnn")
-			output_embedding, _ = get_rnn_encode(output_embedding, sent_cell, self.output_lens,
-													 scope="sent_rnn", reuse=True)
+
 			# reshape input
 			input_embedding = tf.reshape(input_embedding, [-1, max_dialog_len, sent_size])
 			if config.keep_prob < 1.0:
@@ -138,19 +136,17 @@ class HierBaseline(BaseTFModel):
 			# projects into thing of vocab size. TODO no softmax?
 			dec_cell = OutputProjectionWrapper(dec_cell, self.vocab_size)
 
-			selected_attribute_embedding = None
-
 			if forward:
 				loop_func = decoder_fn_lib.context_decoder_fn_inference(None, dec_init_state, embedding,
 																		start_of_sequence_id=self.go_id,
 																		end_of_sequence_id=self.eos_id,
 																		maximum_length=self.max_utt_len,
 																		num_decoder_symbols=self.vocab_size,
-																		context_vector=selected_attribute_embedding)
+																		context_vector=None)
 				dec_input_embedding = None
 				dec_seq_lens = None
 			else:
-				loop_func = decoder_fn_lib.context_decoder_fn_train(dec_init_state, selected_attribute_embedding)
+				loop_func = decoder_fn_lib.context_decoder_fn_train(dec_init_state, None)
 				dec_input_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens)
 				dec_input_embedding = dec_input_embedding[:, 0:-1, :]
 				dec_seq_lens = self.output_lens - 1
@@ -187,6 +183,10 @@ class HierBaseline(BaseTFModel):
 				label_mask = tf.to_float(tf.sign(labels))
 
 				# Loss between words
+				print "dec outs shape", dec_outs.get_shape()
+				print "labels shape", labels.get_shape()
+
+				# Loss between words
 				rc_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=dec_outs, labels=labels)
 				rc_loss = tf.reduce_sum(rc_loss * label_mask, reduction_indices=1)
 				self.avg_rc_loss = tf.reduce_mean(rc_loss)
@@ -214,7 +214,7 @@ class HierBaseline(BaseTFModel):
 		self.saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
 
 
-	def batch_2_feed(self, batch, global_t, repeat=1):
+	def batch_2_feed(self, batch, global_t, repeat=5):
 		context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics, floor_labels = batch
 
 		feed_dict = {self.input_contexts: context, self.context_lens:context_lens,

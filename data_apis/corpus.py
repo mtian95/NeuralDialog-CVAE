@@ -33,28 +33,49 @@ class SWDADialogCorpus(object):
         self.utt_id = 1 
         self.sil_utt = ["<s>", "<sil>", "</s>"]
         self.imdb = imdb
+        # self.is_rnn_baseline = is_rnn_baseline
         
-        if not self.imdb:
-            data = pkl.load(open(self._path, "rb"))
-            self.train_corpus = self.process(data["train"])
-            self.valid_corpus = self.process(data["valid"])
-            self.test_corpus = self.process(data["test"])
+        # if not self.imdb:
+        #     data = pkl.load(open(self._path, "rb"))
+        #     self.train_corpus = self.process(data["train"])
+        #     self.valid_corpus = self.process(data["valid"])
+        #     self.test_corpus = self.process(data["test"])
 
-        elif self.imdb:
-            self.index_from = 3
-            (x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
-                                                                    path='imdb.npz',
-                                                                    num_words=None,
-                                                                    skip_top=0,
-                                                                    maxlen=None,
-                                                                    seed=113,
-                                                                    start_char=2,
-                                                                    oov_char=1,
-                                                                    index_from=self.index_from)
+        # elif self.imdb:
+        #     self.index_from = 3
+        #     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
+        #                                                             path='imdb.npz',
+        #                                                             num_words=None,
+        #                                                             skip_top=0,
+        #                                                             maxlen=None,
+        #                                                             seed=113,
+        #                                                             start_char=2,
+        #                                                             oov_char=1,
+        #                                                             index_from=self.index_from)
 
-            self.train_corpus = self.process(x_train)
-            self.valid_corpus = self.process(data["valid"])
-            self.test_corpus = self.process(data["test"])
+        #     self.train_corpus = self.process(x_train)
+        #     self.valid_corpus = self.process(data["valid"])
+        #     self.test_corpus = self.process(data["test"])
+
+        # if self.is_rnn_baseline:
+        #     data = pkl.load(open(self._path, "rb"))
+        #     self.train_corpus_sent = self.process_baseline(data["train"])
+        #     self.valid_corpus_sent = self.process_baseline(data["valid"])
+        #     self.test_corpus_sent = self.process_baseline(data["test"])
+        #     self.train_corpus = self.process(data["train"])
+        #     self.valid_corpus = self.process(data["valid"])
+        #     self.test_corpus = self.process(data["test"])
+
+        # else:
+        #     data = pkl.load(open(self._path, "rb"))
+        #     self.train_corpus = self.process(data["train"])
+        #     self.valid_corpus = self.process(data["valid"])
+        #     self.test_corpus = self.process(data["test"])
+
+        data = pkl.load(open(self._path, "rb"))
+        self.train_corpus = self.process(data["train"])
+        self.valid_corpus = self.process(data["valid"])
+        self.test_corpus = self.process(data["test"])
 
         self.vocab_dict_path = vocab_dict_path
         self.lda_model = lda_model
@@ -72,27 +93,42 @@ class SWDADialogCorpus(object):
         all_lenes = []
 
         for l in data:
-            # lower_utts = list of tokenized version of the strings
             lower_utts = [(["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"])
                           for utt in l] # for utt in l['utts']]
             all_lenes.extend([len(u) for u in lower_utts])
-            # lower_utts = [(caller, ["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"], feat)
-                          # for caller, utt, feat in l["utts"]]
-            # all_lenes.extend([len(u) for c, u, f in lower_utts])
 
-            # dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
             # dialog = [(bod_utt, 0)] + [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
             dialog = [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
 
-
-            # new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
             new_utts.extend([bod_utt] + lower_utts)
             new_dialog.append(dialog)
-            # new_meta.append(meta)
 
         print("Max utt len %d, mean utt len %.2f" % (np.max(all_lenes), float(np.mean(all_lenes))))
-        # return new_dialog, new_meta, new_utts
         return new_dialog, new_utts
+
+    # def process_baseline(self, data):
+    #     """new_dialog: [(a, 1/0), (a,1/0)], new_meta: (a, b, topic), new_utt: [[a,b,c)"""
+    #     """ 1 is own utt and 0 is other's utt"""
+    #     new_dialog = []
+    #     new_meta = []
+    #     new_utts = []
+    #     bod_utt = ["<s>", "<d>", "</s>"] # TODO what do we do about topic for this?
+    #     all_lenes = []
+
+    #     for l in data:
+    #         for utt in l:
+    #             lower_utts = [(["<s>"] + nltk.WordPunctTokenizer().tokenize(word.lower()) + ["</s>"])
+    #                       for word in utt] # for utt in l['utts']]
+    #             all_lenes.extend([len(u) for u in lower_utts])
+
+    #             # dialog = [(bod_utt, 0)] + [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
+    #             dialog = lower_utts
+
+    #         new_utts.extend([bod_utt] + lower_utts)
+    #         new_dialog.append(dialog)
+
+    #     print("Max utt len %d, mean utt len %.2f" % (np.max(all_lenes), float(np.mean(all_lenes))))
+    #     return new_dialog, new_utts
 
     def build_vocab(self, max_vocab_cnt):
         if not self.imdb:
@@ -173,8 +209,8 @@ class SWDADialogCorpus(object):
             self.word2vec.append(vec)
         print("word2vec cannot cover %f vocab" % (float(oov_cnt)/len(self.vocab)))
 
-    # returns tokenized versions of the corpus. currently not used.
     def get_utt_corpus(self):
+        """Currently unused"""
         def _to_id_corpus(data):
             results = []
             for line in data:
@@ -186,31 +222,30 @@ class SWDADialogCorpus(object):
         id_test = _to_id_corpus(self.test_corpus[self.utt_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
-    # returns list of lists, one list for each paragraph
-    # each list = list of tuples, one for each sentence
-    # sentence tuple = ([tokens rep each word in sent], floor, feat)
-    # to_id_corpus2: returns (sent in tokens, 0/1 paragraph end label, vector version of topic of just that sent)
+
     def get_dialog_corpus(self):
-        # returns a topic vector for each paragraph
+        """
+        Prepare dialog corpus.
+        Returns list of lists, one list for each paragraph
+        Each list = list of tuples, one for each sentence
+        Sentence tuple = ([tokens rep each word in sent], floor, sent topic)
+        """
         def _get_topic_vector(text):
             text = " ".join(text)
             return self.lda_model.get_topic_vector(text)
 
         def _to_id_corpus2(data):
             results = []
-            # counter = 0
             for dialog in data:
-                temp_text = []
                 temp_tokens = []
                 temp_topics = []
+                temp_floor = []
                 for utt, end_label in dialog:
                     temp_topics.append(_get_topic_vector(utt))
                     temp_tokens.append([self.rev_vocab.get(t, self.unk_id) for t in utt])
-                temp_floor = [0]*(len(dialog)-1) + [1]
+                    temp_floor.append(end_label)
+                # temp_floor = [0]*(len(dialog)-1) + [1]
                 results.append(zip(temp_tokens, temp_floor, temp_topics))
-                # counter += 1
-                # if counter == 31:
-                #     break
             return results
 
         # deprecated method
@@ -234,19 +269,18 @@ class SWDADialogCorpus(object):
         id_test = _to_id_corpus2(self.test_corpus[self.dialog_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
-    # returns topic vector for entire paragraph (or keywords during testing). this is fed in as metadata
     def get_meta_corpus(self):
+        """
+        Prepares meta corpus. 
+        Returns a paragraph level topic vector for each paragraph (aka each dialog)
+        """
         def _to_id_corpus(data):
             results = []
-            # counter = 0
             for dialog in data:
                 tmp_sentences = []
                 for utt, end_label in dialog:
                     tmp_sentences.extend(utt)
                 results.append(self.lda_model.get_topic_vector(" ".join(tmp_sentences)))
-                # counter += 1
-                # if counter == 31:
-                #     break
             return results
 
         id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
@@ -254,3 +288,59 @@ class SWDADialogCorpus(object):
         id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
+
+    def get_baseline_dialog_corpus(self):
+        """
+        Prepare corpus for the RNN baseline model. 
+        Returns a list of lists, one for each sentence.
+        Each sentence list is a list of the tokenized words in that paragraph.
+        """
+        def _get_topic_vector(text):
+            text = " ".join(text)
+            return self.lda_model.get_topic_vector(text)
+
+        # def _to_id_corpus(data):
+        #     results = []
+        #     for sentence in data:
+        #         print sentence[0]
+        #         temp_tokens = [self.rev_vocab.get(word, self.unk_id) for word in sentence]
+        #         results.append(temp_tokens)
+        #     return results
+
+        def _to_id_corpus2(data):
+            results = []
+            for dialog in data:
+                for utt, end_label in dialog:
+                    temp_tokens = []
+                    for word in utt:
+                        temp_tokens.append([self.rev_vocab.get(word, self.unk_id)])
+                    results.append(temp_tokens)
+            return results
+
+        id_train = _to_id_corpus2(self.train_corpus[self.dialog_id])
+        id_valid = _to_id_corpus2(self.valid_corpus[self.dialog_id])
+        id_test = _to_id_corpus2(self.test_corpus[self.dialog_id])
+        return {'train': id_train, 'valid': id_valid, 'test': id_test}
+
+
+    def get_baseline_meta_corpus(self):
+        """
+        Prepares meta corpus for the RNN baseline. 
+        Returns a paragraph level topic vector for each sentence. 
+        AKA if a paragraph has 5 sentences, that paragraph's topic vector is added 5 times.
+        """
+        def _to_id_corpus(data):
+            results = []
+            for dialog in data:
+                tmp_sentences = []
+                sent_count = 0
+                for utt, end_label in dialog:
+                    tmp_sentences.extend(utt)
+                    sent_count += 1
+                results.extend([self.lda_model.get_topic_vector(" ".join(tmp_sentences))]*sent_count)
+            return results
+
+        id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
+        id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
+        id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
+        return {'train': id_train, 'valid': id_valid, 'test': id_test}

@@ -207,7 +207,8 @@ class KgRnnCVAE(BaseTFModel):
             input_embedding = embedding_ops.embedding_lookup(embedding, tf.reshape(self.input_contexts, [-1]))
             # reshape embedding. -1 means that the first dimension can be whatever necessary to make the other 2 dimensions work w/the data 
             input_embedding = tf.reshape(input_embedding, [-1, self.max_utt_len, config.embed_size])
-            output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens)
+            # embed the output so you can feed it into the VAE
+            output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens) 
 
             if config.sent_type == "bow":
                 input_embedding, sent_size = get_bow(input_embedding)
@@ -301,7 +302,6 @@ class KgRnnCVAE(BaseTFModel):
             gen_inputs = tf.concat([cond_embedding, latent_sample], 1) #float32
 
             # BOW loss
-            # NOTE here's the bow predicted output
             bow_fc1 = layers.fully_connected(gen_inputs, 400, activation_fn=tf.tanh, scope="bow_fc1")
             if config.keep_prob < 1.0:
                 bow_fc1 = tf.nn.dropout(bow_fc1, config.keep_prob)
