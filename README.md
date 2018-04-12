@@ -1,3 +1,32 @@
+# Usage V2
+
+All model parameters can be changed in 
+
+## Train LDA topic model
+    python lda.py
+Specify the number of topics, number of documents to train on, corpus, and save paths in config_utils.py.  
+This will save a trained lda model to lda_model_save_path + number of docs it was trained on + epoch time of runtime
+
+## Train vanilla RNN baseline
+Not implemented yet
+
+## Train Hierarchical baseline
+    python main.py --model_type=hierbaseline
+All config for this model is the same as the config for KgCVAE set in config_utils.py.  
+This will default to training and saving the model into ./working_hierbaseline
+
+## Train CVAE
+    python main.py --model_type=kgcvae --use_hcf=False
+will run default cvae training and save model to ./working_kgcvae (unfortunately this is the same directory as kgcvae)
+
+## Train KgCVAE
+    python main.py --model_type=kgcvae
+will run default training and save model to ./working_kgcvae
+
+
+# ---- Old readme starts here ----
+
+
 # Knowledge-Guided CVAE for dialog generation
 
 We provide a TensorFlow implementation of the CVAE-based dialog model described in
@@ -14,24 +43,24 @@ See the [paper](https://arxiv.org/abs/1703.10960) for more details.
 
 # Usage
 ## Train a new model
-    python kgcvae_swda.py
+    python main.py --model_type=kgcvae
 will run default training and save model to ./working
 
 ## Test a existing model
-Modify the TF flags at the top of kgcvae_swda.py as follows to run a existing model
+Modify the TF flags at the top of main.py as follows to run a existing model
 
     forward_only: False -> True
     test_path: set to the folder contains the model. E.g. runxxxx
 Then you can run the model by:
 
-    python kgcvae_swda.py
+    python main.py --model_type=kgcvae
 The outputs will be printed to stdout and generated responses will be saved at test.txt in the test_path.
 
 ## Use pre-trained Word2vec
 Download Glove word embeddings from https://nlp.stanford.edu/projects/glove/
 The default setting use 200 dimension word embedding trained on Twitter.
 
-At last, set **word2vec_path** at line 15 of kgcvae_swda.py.
+At last, set **word2vec_path** at line 15 of main.py.
 
 ## Dataset
 We release two dataset:
@@ -68,7 +97,7 @@ If you want to train the model on your own data. Please create a pickle file has
     # For example, a utterance look like this:
     ('B','especially your foreign cars',['statement-non-opinion'])
 
-Put the resulting file into ./data and set the **data_dir** in kgcvae_swda.py
+Put the resulting file into ./data and set the **data_dir** in main.py
 
 
 # References 

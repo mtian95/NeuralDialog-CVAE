@@ -85,8 +85,6 @@ class LongDataLoader(object):
         print("%s begins with %d batches with %d left over samples" % (self.name, self.num_batch, left_over))
 
     def next_batch(self):
-        print "pointer value", self.ptr
-        print "length of grid_indexes", len(self.grid_indexes)
         if self.ptr < self.num_batch:
             current_grid = self.grid_indexes[self.ptr]
             if self.ptr > 0:
@@ -189,7 +187,7 @@ class SWDADataLoader(LongDataLoader):
         # ot_profiles = np.array([meta[1-out_floors[idx]] for idx, meta in enumerate(meta_rows)])
         vec_paragraph_topics = np.array(meta_rows)
         vec_context_lens = np.array(context_lens)
-        vec_out_floors = np.array(out_floors)
+        vec_out_floors = np.array(out_floors).reshape(len(out_floors), 1)
         vec_context = np.zeros((self.batch_size, np.max(vec_context_lens), self.max_utt_size), dtype=np.int32)
         vec_floors = np.zeros((self.batch_size, np.max(vec_context_lens)), dtype=np.int32)
         vec_outs = np.zeros((self.batch_size, np.max(out_lens)), dtype=np.int32)
@@ -200,8 +198,6 @@ class SWDADataLoader(LongDataLoader):
             vec_outs[b_id, 0:vec_out_lens[b_id]] = out_utts[b_id]
             vec_floors[b_id, 0:vec_context_lens[b_id]] = floors[b_id]
             vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id])
-
-        print vec_floors.shape
 
         # return vec_context, vec_context_lens, vec_floors, topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
         return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das, vec_paragraph_topics, vec_out_floors

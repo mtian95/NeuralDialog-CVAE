@@ -27,7 +27,7 @@ class KgCVAEConfig(object):
     dec_cell_size = 400  # response decoder hidden size
     backward_size = 10  # how many utterance kept in the context window
     step_size = 1  # internal usage
-    max_utt_len = 40  # max number of words in an utterance
+    max_utt_len = 25  # max number of words in an utterance
     num_layer = 1  # number of context RNN layers
 
     # Optimization parameters
@@ -48,6 +48,20 @@ class KgCVAEConfig(object):
 
     # Topic model related
     num_topics = 100
+
+class LDAConfig(object):
+    corpus_is_wiki = True # whether LDA model corpus is a wikipedia or simple-wiki corpus
+    lda_corpus_path = './data/simplewiki-20171020-pages-articles-multistream.xml.bz2' # corpus for LDA model. End in .bz2
+    clip_corpus = False # clip corpus to smaller corpus? Will save training time
+    id2word_path = 'lda2/id2word_wiki.txt' # path for id2word dictionary
+    lda_bow_path = 'lda2/wiki_bow.mm' # path of bow of corpus
+
+    no_below = 20 # filter words that appear in less than this many documents
+    no_above_pct = 0.1 # filter words that appear in more than this percent of documents
+    docs_to_clip_to = 10 # number of documents to train LDA model on
+    num_topics = 10
+
+    lda_model_save_path = 'lda2/lda_model' # beginning of path that trained lda model will be saved to
 
 
 

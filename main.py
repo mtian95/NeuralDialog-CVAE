@@ -12,13 +12,16 @@ from config_utils import KgCVAEConfig as Config
 from data_apis.corpus import SWDADialogCorpus
 from data_apis.data_utils import SWDADataLoader
 from models.cvae import KgRnnCVAE
+from models.hier_baseline import HierBaseline
 from ldamodel import LDAModel
 
 # constants
+tf.app.flags.DEFINE_bool("use_hcf", True, "If model_type = kgcvae, this specifies whether to use kgcvae (True) or cvae (False)")
+tf.app.flags.DEFINE_string("model_type", None, "The type of model to train. Can be kgcvae, hierbaseline, rnnbaseline")
 tf.app.flags.DEFINE_string("word2vec_path", None, "The path to word2vec. Can be None.")
 # tf.app.flags.DEFINE_string("data_dir", "data/full_swda_clean_42da_sentiment_dialog_corpus.p", "Raw data directory.")
-# tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") # TODO redirect this to the correct corpus
-tf.app.flags.DEFINE_string("data_dir", "data/dbpedia.p", "Raw data directory.") # TODO redirect this to the correct corpus
+# tf.app.flags.DEFINE_string("data_dir", "data/test_data.p", "Raw data directory.") 
+tf.app.flags.DEFINE_string("data_dir", "data/dbpedia_small.p", "Raw data directory.") # TODO redirect this to the correct corpus
 tf.app.flags.DEFINE_string("work_dir", "working", "Experiment results directory.")
 tf.app.flags.DEFINE_bool("equal_batch", True, "Make each batch has similar length.")
 tf.app.flags.DEFINE_bool("resume", False, "Resume from previous")
@@ -28,22 +31,38 @@ tf.app.flags.DEFINE_string("test_path", "run1500783422", "the dir to load checkp
 tf.app.flags.DEFINE_string("lda_model_path", "lda/lda_model", "the path to pretrained LDA model")
 tf.app.flags.DEFINE_string("id2word_path", "lda/id2word_wiki.txt", "the path to the id2word dict for LDA model")
 tf.app.flags.DEFINE_string("vocab_dict_path", "data/vocab", "Vocab files directory.")
+tf.app.flags.DEFINE_bool("use_imdb", False, "whether to use the keras imdb dataset")
 
 FLAGS = tf.app.flags.FLAGS
 
 
 def main():
+    # which model to run
+    if FLAGS.model_type is None:
+        raise ValueError("Must give a model_type (kgcvae, hierbaseline, or rnnbaseline)")
+    elif FLAGS.model_type.lower().strip() == "kgcvae":
+        model_class = KgRnnCVAE
+    elif FLAGS.model_type.lower().strip() == 'hierbaseline':
+        model_class = HierBaseline
+    elif FLAGS.model_type.lower().strip() == 'rnnbaseline':
+        raise NotImplementedError("Haven't made rnn baseline yet")
+    else:
+        raise ValueError("model_type must be kgcvae, hierbaseline, or rnnbaseline")
+
     # config for training
     config = Config()
+    config.use_hcf = FLAGS.use_hcf
 
     # config for validation
     valid_config = Config()
+    valid_config.use_hcf = FLAGS.use_hcf
     valid_config.keep_prob = 1.0
     valid_config.dec_keep_prob = 1.0
     valid_config.batch_size = 60
 
     # configuration for testing
     test_config = Config()
+    test_config.use_hcf = FLAGS.use_hcf
     test_config.keep_prob = 1.0
     test_config.dec_keep_prob = 1.0
     test_config.batch_size = 1
@@ -55,7 +74,7 @@ def main():
 
     # get data set
     api = SWDADialogCorpus(FLAGS.data_dir, word2vec=FLAGS.word2vec_path, word2vec_dim=config.embed_size, vocab_dict_path=FLAGS.vocab_dict_path,
-                            lda_model=ldamodel)
+                            lda_model=ldamodel, imdb=FLAGS.use_imdb)
     dial_corpus = api.get_dialog_corpus()
     meta_corpus = api.get_meta_corpus()
 
@@ -70,20 +89,20 @@ def main():
 
 
     if FLAGS.forward_only or FLAGS.resume: # if you're testing an existing implementation or resuming training
-        log_dir = os.path.join(FLAGS.work_dir, FLAGS.test_path)
+        log_dir = os.path.join(FLAGS.work_dir+"_"+FLAGS.model_type, FLAGS.test_path)
     else:
-        log_dir = os.path.join(FLAGS.work_dir, "run"+str(int(time.time())))
+        log_dir = os.path.join(FLAGS.work_dir+"_"+FLAGS.model_type, "run"+str(int(time.time())))
 
     # begin training
     with tf.Session() as sess:
         initializer = tf.random_uniform_initializer(-1.0 * config.init_w, config.init_w)
         scope = "model"
         with tf.variable_scope(scope, reuse=None, initializer=initializer):
-            model = KgRnnCVAE(sess, config, api, log_dir=None if FLAGS.forward_only else log_dir, forward=False, scope=scope)
+            model = model_class(sess, config, api, log_dir=None if FLAGS.forward_only else log_dir, forward=False, scope=scope)
         with tf.variable_scope(scope, reuse=True, initializer=initializer):
-            valid_model = KgRnnCVAE(sess, valid_config, api, log_dir=None, forward=False, scope=scope)
+            valid_model = model_class(sess, valid_config, api, log_dir=None, forward=False, scope=scope)
         with tf.variable_scope(scope, reuse=True, initializer=initializer):
-            test_model = KgRnnCVAE(sess, test_config, api, log_dir=None, forward=True, scope=scope)
+            test_model = model_class(sess, test_config, api, log_dir=None, forward=True, scope=scope)
 
         print("Created computation graphs")
         if api.word2vec is not None and not FLAGS.forward_only:
@@ -132,13 +151,13 @@ def main():
                 global_t, train_loss = model.train(global_t, sess, train_feed, update_limit=config.update_limit)
 
                 # begin validation and testing
-                # valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
-                #                       valid_config.step_size, shuffle=False, intra_shuffle=False)
-                # valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
+                valid_feed.epoch_init(valid_config.batch_size, valid_config.backward_size,
+                                      valid_config.step_size, shuffle=False, intra_shuffle=False)
+                valid_loss = valid_model.valid("ELBO_VALID", sess, valid_feed)
 
-                # test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
-                #                      test_config.step_size, shuffle=True, intra_shuffle=False)
-                # test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
+                test_feed.epoch_init(test_config.batch_size, test_config.backward_size,
+                                     test_config.step_size, shuffle=True, intra_shuffle=False)
+                test_model.test(sess, test_feed, num_batch=1) #TODO change this batch size back to a reasonably large number
 
 
                 done_epoch = epoch + 1
@@ -186,6 +205,7 @@ def main():
             dest_f.close()
 
 if __name__ == "__main__":
+    FLAGS = tf.app.flags.FLAGS
     if FLAGS.forward_only:
         if FLAGS.test_path is None:
             print("Set test_path before forward only")

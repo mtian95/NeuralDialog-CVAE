@@ -163,7 +163,7 @@ class KgRnnCVAE(BaseTFModel):
             # all dialog context and known attributes
             self.input_contexts = tf.placeholder(dtype=tf.int32, shape=(None, None, self.max_utt_len), name="dialog_context")
             self.floors = tf.placeholder(dtype=tf.float32, shape=(None, None), name="floor") # TODO float
-            self.floor_labels = tf.placeholder(dtype=tf.float32, shape=(None, ), name="floor_labels")
+            self.floor_labels = tf.placeholder(dtype=tf.float32, shape=(None, 1), name="floor_labels")
             self.context_lens = tf.placeholder(dtype=tf.int32, shape=(None,), name="context_lens")
             self.paragraph_topics = tf.placeholder(dtype=tf.float32, shape=(None,self.num_topics), name="paragraph_topics") 
             # self.topics = tf.placeholder(dtype=tf.int32, shape=(None,), name="topics")
@@ -425,17 +425,16 @@ class KgRnnCVAE(BaseTFModel):
                 self.avg_bow_loss  = tf.reduce_mean(bow_loss)
 
                 # Predict 0/1 (1 = last sentence in paragraph)
-                # TODO need to reduce mean?
-                self.end_loss = tf.nn.softmax_cross_entropy_with_logits(
+                end_loss = tf.nn.softmax_cross_entropy_with_logits(
                             labels = self.floor_labels, 
-                            logits = tf.transpose(self.paragraph_end_logits))
+                            logits = self.paragraph_end_logits)
+                self.avg_end_loss = tf.reduce_mean(end_loss)
 
                 # Topic prediction loss 
                 # TODO does this way of doing KL work?
                 if config.use_hcf:
                     div_prob = tf.divide(self.da_logits, self.output_das)
                     self.avg_da_loss = tf.reduce_mean(-tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=div_prob))
-                    # da_loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=self.output_das) 
                     # self.avg_da_loss = tf.reduce_mean(da_loss)
 
                 else:
@@ -450,14 +449,14 @@ class KgRnnCVAE(BaseTFModel):
 
                 self.kl_w = kl_weights
                 self.elbo = self.avg_rc_loss + kl_weights * self.avg_kld
-                # NOTE here's the final loss
-                aug_elbo = self.avg_bow_loss + self.avg_da_loss + self.elbo + self.end_loss
+                aug_elbo = self.avg_bow_loss + self.avg_da_loss + self.elbo + self.avg_end_loss
 
                 tf.summary.scalar("da_loss", self.avg_da_loss)
                 tf.summary.scalar("rc_loss", self.avg_rc_loss)
                 tf.summary.scalar("elbo", self.elbo)
                 tf.summary.scalar("kld", self.avg_kld)
                 tf.summary.scalar("bow_loss", self.avg_bow_loss)
+                tf.summary.scalar("paragraph_end_loss", self.avg_end_loss)
 
                 self.summary_op = tf.summary.merge_all()
 
@@ -470,7 +469,6 @@ class KgRnnCVAE(BaseTFModel):
         self.saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
 
     def batch_2_feed(self, batch, global_t, use_prior, repeat=1):
-        # NOTE here's where the outputs are fed in
         # context, context_lens, floors, topics, my_profiles, ot_profiles, outputs, output_lens, output_das = batch
         context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics, floor_labels = batch
 
@@ -509,9 +507,10 @@ class KgRnnCVAE(BaseTFModel):
         rc_ppls = []
         kl_losses = []
         bow_losses = []
+        end_losses = []
         local_t = 0
         start_time = time.time()
-        loss_names =  ["elbo_loss", "bow_loss", "rc_loss", "rc_peplexity", "kl_loss"]
+        loss_names =  ["elbo_loss", "bow_loss", "rc_loss", "rc_peplexity", "kl_loss", "paragraph_end_loss"]
         while True:
             batch = train_feed.next_batch()
             if batch is None:
@@ -519,10 +518,9 @@ class KgRnnCVAE(BaseTFModel):
             if update_limit is not None and local_t >= update_limit:
                 break
             feed_dict = self.batch_2_feed(batch, global_t, use_prior=False)
-            # NOTE this is when losses are actually calculated and optimization is done
-            _, sum_op, elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss = sess.run([self.train_ops, self.summary_op,
+            _, sum_op, elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss, end_loss= sess.run([self.train_ops, self.summary_op,
                                                                          self.elbo, self.avg_bow_loss,
-                                                                         self.avg_rc_loss, self.rc_ppl, self.avg_kld],
+                                                                         self.avg_rc_loss, self.rc_ppl, self.avg_kld, self.avg_end_loss],
                                                                          feed_dict)
             self.train_summary_writer.add_summary(sum_op, global_t)
             elbo_losses.append(elbo_loss)
@@ -530,16 +528,15 @@ class KgRnnCVAE(BaseTFModel):
             rc_ppls.append(rc_ppl)
             rc_losses.append(rc_loss)
             kl_losses.append(kl_loss)
+            end_losses.append(end_loss)
 
             global_t += 1
             local_t += 1
 
-            print(train_feed)
-
             if local_t % (train_feed.num_batch / 10) == 0:
                 kl_w = sess.run(self.kl_w, {self.global_t: global_t})
                 self.print_loss("%.2f" % (train_feed.ptr / float(train_feed.num_batch)),
-                                loss_names, [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses], "kl_w %f" % kl_w)
+                                loss_names, [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses, end_losses], "kl_w %f" % kl_w)
 
         # finish epoch!
         epoch_time = time.time() - start_time
@@ -549,7 +546,7 @@ class KgRnnCVAE(BaseTFModel):
         #                              "step time %.4f" % (epoch_time / train_feed.num_batch))
 
         avg_losses = self.print_loss("Epoch Done", loss_names,
-                                     [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses],
+                                     [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses, end_losses],
                                      "step time %.4f" % (epoch_time / 1))
 
         return global_t, avg_losses[0]
@@ -560,6 +557,7 @@ class KgRnnCVAE(BaseTFModel):
         rc_ppls = []
         bow_losses = []
         kl_losses = []
+        end_losses = []
 
         while True:
             batch = valid_feed.next_batch()
@@ -567,20 +565,21 @@ class KgRnnCVAE(BaseTFModel):
                 break
             feed_dict = self.batch_2_feed(batch, None, use_prior=False, repeat=1)
 
-            elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss = sess.run(
+            elbo_loss, bow_loss, rc_loss, rc_ppl, kl_loss, end_loss = sess.run(
                 [self.elbo, self.avg_bow_loss, self.avg_rc_loss,
-                 self.rc_ppl, self.avg_kld], feed_dict)
+                 self.rc_ppl, self.avg_kld, self.avg_end_loss], feed_dict)
             elbo_losses.append(elbo_loss)
             rc_losses.append(rc_loss)
             rc_ppls.append(rc_ppl)
             bow_losses.append(bow_loss)
             kl_losses.append(kl_loss)
+            end_losses.append(end_loss)
 
-        avg_losses = self.print_loss(name, ["elbo_loss", "bow_loss", "rc_loss", "rc_peplexity", "kl_loss"],
-                                     [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses], "")
+        avg_losses = self.print_loss(name, ["elbo_loss", "bow_loss", "rc_loss", "rc_peplexity", "kl_loss", "paragraph_end_loss"],
+                                     [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses, end_losses], "")
         return avg_losses[0]
 
-    # TODO understand and fix this section
+    # TODO how do you feed back in predicted sentence end as meta? Also get it to stop based on paragraph end pred
     def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout):
         local_t = 0
         recall_bleus = []
@@ -591,8 +590,8 @@ class KgRnnCVAE(BaseTFModel):
             if batch is None or (num_batch is not None and local_t > num_batch):
                 break
             feed_dict = self.batch_2_feed(batch, None, use_prior=True, repeat=repeat)
-            # NOTE when testing, this is where we get the predictions
             word_outs, da_logits = sess.run([self.dec_out_words, self.da_logits], feed_dict)
+
             # splits into 5 equal pieces
             sample_words = np.split(word_outs, repeat, axis=0)
             sample_das = np.split(da_logits, repeat, axis=0)
@@ -611,25 +610,27 @@ class KgRnnCVAE(BaseTFModel):
                     print("%.2f >> " % (test_feed.ptr / float(test_feed.num_batch))),
 
             for b_id in range(test_feed.batch_size):
-                # print the real/true dialog context
-                # dest.write("Batch %d index %d of topic %s\n" % (local_t, b_id, self.topic_vocab[true_topics[b_id]]))
+                # true dialog context
+                dest.write("Batch %d index %d " % (local_t, b_id))
                 start = np.maximum(0, true_src_lens[b_id]-5)
                 for t_id in range(start, true_srcs.shape[1], 1):
                     src_str = " ".join([self.vocab[e] for e in true_srcs[b_id, t_id].tolist() if e != 0])
                     dest.write("Src %d-%d: %s\n" % (t_id, true_floor[b_id, t_id], src_str))
-                # print the true outputs
+
+                # true outputs
                 true_tokens = [self.vocab[e] for e in true_outs[b_id].tolist() if e not in [0, self.eos_id, self.go_id]]
                 true_str = " ".join(true_tokens).replace(" ' ", "'")
-                da_str = self.da_vocab[true_das[b_id]]
-                # print the predicted outputs
-                dest.write("Target (%s) >> %s\n" % (da_str, true_str))
+                # da_str = self.da_vocab[true_das[b_id]]
+
+                # predicted outputs
+                dest.write("Target >> %s\n" % (true_str))
                 local_tokens = []
                 for r_id in range(repeat):
                     pred_outs = sample_words[r_id]
-                    pred_da = np.argmax(sample_das[r_id], axis=1)[0]
+                    pred_da = sample_das[r_id] # np.argmax(sample_das[r_id], axis=1)[0]
                     pred_tokens = [self.vocab[e] for e in pred_outs[b_id].tolist() if e != self.eos_id and e != 0]
                     pred_str = " ".join(pred_tokens).replace(" ' ", "'")
-                    dest.write("Sample %d (%s) >> %s\n" % (r_id, self.da_vocab[pred_da], pred_str))
+                    dest.write("Sample %d >> %s\n" % (r_id, pred_str))
                     local_tokens.append(pred_tokens)
 
                 max_bleu, avg_bleu = utils.get_bleu_stats(true_tokens, local_tokens)
