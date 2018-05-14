@@ -153,10 +153,8 @@ class SWDADataLoader(LongDataLoader):
         meta_rows = [self.meta_data[idx] for idx in batch_ids]
         dialog_lens = [self.data_lens[idx] for idx in batch_ids]
 
-        # topics = np.array([meta[2] for meta in meta_rows])
         cur_pos = [np.minimum(1.0, e_id/float(l)) for l in dialog_lens]
 
-        # input_context, context_lens, floors, topics, a_profiles, b_Profiles, outputs, output_lens
         context_lens, context_utts, floors, out_utts, out_lens, out_floors, out_das = [], [], [], [], [], [], []
         for row in rows:
             if s_id < len(row)-1:
@@ -183,8 +181,6 @@ class SWDADataLoader(LongDataLoader):
                 raise ValueError("S_ID %d larger than row" % s_id)
 
 
-        # my_profiles = np.array([meta[out_floors[idx]] for idx, meta in enumerate(meta_rows)])
-        # ot_profiles = np.array([meta[1-out_floors[idx]] for idx, meta in enumerate(meta_rows)])
         vec_paragraph_topics = np.array(meta_rows)
         vec_context_lens = np.array(context_lens)
         vec_out_floors = np.array(out_floors).reshape(len(out_floors), 1)
@@ -199,16 +195,13 @@ class SWDADataLoader(LongDataLoader):
             vec_floors[b_id, 0:vec_context_lens[b_id]] = floors[b_id]
             vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id])
 
-        # return vec_context, vec_context_lens, vec_floors, topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
-        print "input shape", vec_context.shape
-        print "output shape", vec_outs.shape
-        print "meta shape", vec_paragraph_topics.shape
-
 
         return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das, vec_paragraph_topics, vec_out_floors
 
 
+
 class RNNDataLoader(LongDataLoader):
+    """This class is no longer used. Can delete this code when everything is polished. Will keep it here for now."""
     def __init__(self, name, data, meta_data, config):
         assert len(data) == len(meta_data)
         self.name = name

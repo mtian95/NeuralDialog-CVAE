@@ -53,6 +53,7 @@ class KgCVAEConfig(object):
     max_rnn_sent_len = 25
     rnn_backward_size = max_rnn_sent_len
 
+
 class LDAConfig(object):
     corpus_is_wiki = True # whether LDA model corpus is a wikipedia or simple-wiki corpus
     lda_corpus_path = './data/simplewiki-20171020-pages-articles-multistream.xml.bz2' # corpus for LDA model. End in .bz2

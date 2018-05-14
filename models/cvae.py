@@ -140,15 +140,18 @@ class BaseTFModel(object):
 
 
 class KgRnnCVAE(BaseTFModel):
+    """
+    NOTE: dialog = paragraph = section (these words are used interchangably in the comments)
+    floors = predicted probability (between 0 and 1) for whether the next sentence is the last sentence in the paragraph
+    floors_labels = true label (0 or 1) for whether the next sentence is the last sentence in the paragraph
+    paragraph_topics = topic vector for entire paragraph/dialog
+
+    """
 
     def __init__(self, sess, config, api, log_dir, forward, scope=None):
         self.vocab = api.vocab
         self.rev_vocab = api.rev_vocab
         self.vocab_size = len(self.vocab)
-        # self.topic_vocab = api.topic_vocab
-        # self.topic_vocab_size = len(self.topic_vocab) 
-        # self.da_vocab = api.dialog_act_vocab 
-        # self.da_vocab_size = len(self.da_vocab) 
         self.sess = sess
         self.scope = scope
         self.max_utt_len = config.max_utt_len
@@ -166,9 +169,6 @@ class KgRnnCVAE(BaseTFModel):
             self.floor_labels = tf.placeholder(dtype=tf.float32, shape=(None, 1), name="floor_labels")
             self.context_lens = tf.placeholder(dtype=tf.int32, shape=(None,), name="context_lens")
             self.paragraph_topics = tf.placeholder(dtype=tf.float32, shape=(None,self.num_topics), name="paragraph_topics") 
-            # self.topics = tf.placeholder(dtype=tf.int32, shape=(None,), name="topics")
-            # self.my_profile = tf.placeholder(dtype=tf.float32, shape=(None, 4), name="my_profile")
-            # self.ot_profile = tf.placeholder(dtype=tf.float32, shape=(None, 4), name="ot_profile")
 
             # target response given the dialog context
             self.output_tokens = tf.placeholder(dtype=tf.int32, shape=(None, None), name="output_token")
@@ -185,19 +185,7 @@ class KgRnnCVAE(BaseTFModel):
         max_out_len = array_ops.shape(self.output_tokens)[1]
         batch_size = array_ops.shape(self.input_contexts)[0]
 
-        # Make embeddings for topics, dialog acts, and words
-        # vector_version_of_word_ids = embedding_ops.embedding_lookup(variable_with_words_and_their_ids, tensor_with_word_ids)
-        # with variable_scope.variable_scope("topicEmbedding"):
-        #     t_embedding = tf.get_variable("embedding", [self.topic_vocab_size, config.topic_embed_size], dtype=tf.float32)
-        #     topic_embedding = embedding_ops.embedding_lookup(t_embedding, self.topics)
-
-        # if config.use_hcf:
-        #     with variable_scope.variable_scope("dialogActEmbedding"):
-        #         d_embedding = tf.get_variable("embedding", [self.da_vocab_size, config.da_embed_size], dtype=tf.float32)
-                # da_embedding = embedding_ops.embedding_lookup(d_embedding, self.output_das)
-
         with variable_scope.variable_scope("wordEmbedding"):
-            # TODO does this use the int representations of the words built in corpus.py
             self.embedding = tf.get_variable("embedding", [self.vocab_size, config.embed_size], dtype=tf.float32)
             embedding_mask = tf.constant([0 if i == 0 else 1 for i in range(self.vocab_size)], dtype=tf.float32,
                                          shape=[self.vocab_size, 1])
@@ -210,6 +198,7 @@ class KgRnnCVAE(BaseTFModel):
             # embed the output so you can feed it into the VAE
             output_embedding = embedding_ops.embedding_lookup(embedding, self.output_tokens) 
 
+            # 
             if config.sent_type == "bow":
                 input_embedding, sent_size = get_bow(input_embedding)
                 output_embedding, _ = get_bow(output_embedding)
@@ -219,8 +208,6 @@ class KgRnnCVAE(BaseTFModel):
                 input_embedding, sent_size = get_rnn_encode(input_embedding, sent_cell, scope="sent_rnn")
                 output_embedding, _ = get_rnn_encode(output_embedding, sent_cell, self.output_lens,
                                                      scope="sent_rnn", reuse=True)
-
-            # makes a BiRNN network
             elif config.sent_type == "bi_rnn":
                 fwd_sent_cell = self.get_rnncell("gru", self.sent_cell_size, keep_prob=1.0, num_layer=1)
                 bwd_sent_cell = self.get_rnncell("gru", self.sent_cell_size, keep_prob=1.0, num_layer=1)
@@ -229,18 +216,14 @@ class KgRnnCVAE(BaseTFModel):
             else:
                 raise ValueError("Unknown sent_type. Must be one of [bow, rnn, bi_rnn]")
 
-            # reshape input into dialogs.
+            # reshape input into dialogs
             input_embedding = tf.reshape(input_embedding, [-1, max_dialog_len, sent_size])
             if config.keep_prob < 1.0:
                 input_embedding = tf.nn.dropout(input_embedding, config.keep_prob)
 
-            # convert floors into 1 hot
-            # TODO do we want this one hot? if so, convert floors back into int32
-            # floor_one_hot = tf.one_hot(tf.reshape(self.floors, [-1]), depth=2, dtype=tf.float32)
-            # floor_one_hot = tf.reshape(floor_one_hot, [-1, max_dialog_len, 2])
+            # reshape floors
             floor = tf.reshape(self.floors, [-1, max_dialog_len, 1])
 
-            # joint_embedding = tf.concat([input_embedding, floor_one_hot], 2, "joint_embedding")
             joint_embedding = tf.concat([input_embedding, floor], 2, "joint_embedding")
 
         with variable_scope.variable_scope("contextRNN"):
@@ -269,8 +252,6 @@ class KgRnnCVAE(BaseTFModel):
 
 
         # conditions include topic and rnn of all previous birnn results and metadata about the two people
-        # cond_list = [topic_embedding, self.my_profile, self.ot_profile, enc_last_state]
-        # NOTE
         cond_list = [self.paragraph_topics, enc_last_state]
         cond_embedding = tf.concat(cond_list, 1) #float32
 
@@ -292,8 +273,6 @@ class KgRnnCVAE(BaseTFModel):
                                                     scope="muvar")
             prior_mu, prior_logvar = tf.split(prior_mulogvar, 2, axis=1)
 
-            # seems like use_prior = False when training, = True when testing (because then there's no recog)
-            # use sampled Z or posterior Z
             latent_sample = tf.cond(self.use_prior,
                                     lambda: sample_gaussian(prior_mu, prior_logvar),
                                     lambda: sample_gaussian(recog_mu, recog_logvar))
@@ -313,11 +292,10 @@ class KgRnnCVAE(BaseTFModel):
                 meta_fc1 = layers.fully_connected(gen_inputs, 400, activation_fn=tf.tanh, scope="meta_fc1")
                 if config.keep_prob <1.0:
                     meta_fc1 = tf.nn.dropout(meta_fc1, config.keep_prob)
-                # self.da_logits = layers.fully_connected(meta_fc1, self.da_vocab_size, scope="da_project")
                 self.da_logits = layers.fully_connected(meta_fc1, self.num_topics, scope="da_project") # float32
 
                 da_prob = tf.nn.softmax(self.da_logits)
-                pred_attribute_embedding = da_prob # NOTE change the name of this to predicted sentence topic
+                pred_attribute_embedding = da_prob # TODO change the name of this to predicted sentence topic
                 # pred_attribute_embedding = tf.matmul(da_prob, d_embedding)
 
                 if forward:
@@ -328,14 +306,12 @@ class KgRnnCVAE(BaseTFModel):
 
             # if use_hcf not on, the model won't predict the Y
             else:
-                # self.da_logits = tf.zeros((batch_size, self.da_vocab_size))
                 self.da_logits = tf.zeros((batch_size, self.num_topics))
                 dec_inputs = gen_inputs
                 selected_attribute_embedding = None
 
 
             # Predicting whether or not end of paragraph
-            # NOTE this may not be correct
             self.paragraph_end_logits = layers.fully_connected(gen_inputs, 1, activation_fn=tf.tanh, scope="paragraph_end_fc1") # float32
 
             # Decoder
@@ -405,8 +381,6 @@ class KgRnnCVAE(BaseTFModel):
         if not forward:
             with variable_scope.variable_scope("loss"):
 
-                # NOTE the correct things are self.output_tokens[:, 1:], self.output_das
-
                 labels = self.output_tokens[:, 1:] # correct word tokens
                 label_mask = tf.to_float(tf.sign(labels))
 
@@ -417,7 +391,6 @@ class KgRnnCVAE(BaseTFModel):
                 # used only for perpliexty calculation. Not used for optimzation
                 self.rc_ppl = tf.exp(tf.reduce_sum(rc_loss) / tf.reduce_sum(label_mask))
 
-                """ as n-trial multimodal distribution. """
                 # BOW loss
                 tile_bow_logits = tf.tile(tf.expand_dims(self.bow_logits, 1), [1, max_out_len - 1, 1])
                 bow_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=tile_bow_logits, labels=labels) * label_mask
@@ -431,11 +404,9 @@ class KgRnnCVAE(BaseTFModel):
                 self.avg_end_loss = tf.reduce_mean(end_loss)
 
                 # Topic prediction loss 
-                # TODO does this way of doing KL work?
                 if config.use_hcf:
                     div_prob = tf.divide(self.da_logits, self.output_das)
                     self.avg_da_loss = tf.reduce_mean(-tf.nn.softmax_cross_entropy_with_logits(logits=self.da_logits, labels=div_prob))
-                    # self.avg_da_loss = tf.reduce_mean(da_loss)
 
                 else:
                     self.avg_da_loss = 0.0
@@ -468,15 +439,8 @@ class KgRnnCVAE(BaseTFModel):
 
         self.saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
 
-    def batch_2_feed(self, batch, global_t, use_prior, repeat=1):
-        # context, context_lens, floors, topics, my_profiles, ot_profiles, outputs, output_lens, output_das = batch
+    def batch_2_feed(self, batch, global_t, use_prior, repeat=5):
         context, context_lens, floors, outputs, output_lens, output_das, paragraph_topics, floor_labels = batch
-
-        # feed_dict = {self.input_contexts: context, self.context_lens:context_lens,
-        #              self.floors: floors, self.topics:topics, self.my_profile: my_profiles,
-        #              self.ot_profile: ot_profiles, self.output_tokens: outputs,
-        #              self.output_das: output_das, self.output_lens: output_lens,
-        #              self.use_prior: use_prior}
 
         feed_dict = {self.input_contexts: context, self.context_lens:context_lens,
                      self.floors: floors, self.output_tokens: outputs,
@@ -541,10 +505,6 @@ class KgRnnCVAE(BaseTFModel):
         # finish epoch!
         epoch_time = time.time() - start_time
 
-        # avg_losses = self.print_loss("Epoch Done", loss_names,
-        #                              [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses],
-        #                              "step time %.4f" % (epoch_time / train_feed.num_batch))
-
         avg_losses = self.print_loss("Epoch Done", loss_names,
                                      [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses, end_losses],
                                      "step time %.4f" % (epoch_time / 1))
@@ -579,7 +539,7 @@ class KgRnnCVAE(BaseTFModel):
                                      [elbo_losses, bow_losses, rc_losses, rc_ppls, kl_losses, end_losses], "")
         return avg_losses[0]
 
-    # TODO how do you feed back in predicted sentence end as meta? Also get it to stop based on paragraph end pred
+    # TODO use the predicted paragraph_end_logits to tell it when to stop (ex: if paragraph_end_logits > 0.5)
     def test(self, sess, test_feed, num_batch=None, repeat=5, dest=sys.stdout):
         local_t = 0
         recall_bleus = []
