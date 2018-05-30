@@ -1,6 +1,7 @@
 #    Copyright (C) 2017 Tiancheng Zhao, Carnegie Mellon University
 
 import numpy as np
+import sys
 
 
 # Data feed
@@ -99,13 +100,12 @@ class LongDataLoader(object):
 
 class SWDADataLoader(LongDataLoader):
     # TODO change this none
-    def __init__(self, name, data, meta_data, config, lda_model=None):
+    def __init__(self, name, data, meta_data, config):
         assert len(data) == len(meta_data)
         self.name = name
         self.data = data # from api.get_dialog_corpus()
         self.meta_data = meta_data # from api.get_meta_corpus()
         self.data_size = len(data)
-        self.lda_model = lda_model
         # length of each dialog aka num of sentences
         self.data_lens = all_lens = [len(line) for line in self.data]
         self.max_utt_size = config.max_utt_len
@@ -153,10 +153,8 @@ class SWDADataLoader(LongDataLoader):
         meta_rows = [self.meta_data[idx] for idx in batch_ids]
         dialog_lens = [self.data_lens[idx] for idx in batch_ids]
 
-        # topics = np.array([meta[2] for meta in meta_rows])
         cur_pos = [np.minimum(1.0, e_id/float(l)) for l in dialog_lens]
 
-        # input_context, context_lens, floors, topics, a_profiles, b_Profiles, outputs, output_lens
         context_lens, context_utts, floors, out_utts, out_lens, out_floors, out_das = [], [], [], [], [], [], []
         for row in rows:
             if s_id < len(row)-1:
@@ -183,8 +181,6 @@ class SWDADataLoader(LongDataLoader):
                 raise ValueError("S_ID %d larger than row" % s_id)
 
 
-        # my_profiles = np.array([meta[out_floors[idx]] for idx, meta in enumerate(meta_rows)])
-        # ot_profiles = np.array([meta[1-out_floors[idx]] for idx, meta in enumerate(meta_rows)])
         vec_paragraph_topics = np.array(meta_rows)
         vec_context_lens = np.array(context_lens)
         vec_out_floors = np.array(out_floors).reshape(len(out_floors), 1)
@@ -199,13 +195,91 @@ class SWDADataLoader(LongDataLoader):
             vec_floors[b_id, 0:vec_context_lens[b_id]] = floors[b_id]
             vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id])
 
-        # return vec_context, vec_context_lens, vec_floors, topics, my_profiles, ot_profiles, vec_outs, vec_out_lens, vec_out_das
+
         return vec_context, vec_context_lens, vec_floors, vec_outs, vec_out_lens, vec_out_das, vec_paragraph_topics, vec_out_floors
 
 
 
+class RNNDataLoader(LongDataLoader):
+    """This class is no longer used. Can delete this code when everything is polished. Will keep it here for now."""
+    def __init__(self, name, data, meta_data, config):
+        assert len(data) == len(meta_data)
+        self.name = name
+        self.data = data # from api.get_baseline_dialog_corpus()
+        self.meta_data = meta_data # from api.get_meta_corpus()
+        self.data_size = len(data)
+        # length of each dialog aka num of sentences
+        self.data_lens = all_lens = [len(line) for line in self.data]
+        self.max_utt_size = config.max_rnn_sent_len
+        print("Max len %d and min len %d and avg len %f" % (np.max(all_lens),
+                                                            np.min(all_lens),
+                                                            float(np.mean(all_lens))))
+        # self.indexes gets a list of indices that would sort the dialogs in increasing order of sent number
+        self.indexes = list(np.argsort(all_lens))
 
+        # pads tokens to be max_utt_size with the "pad" character in corpus
+    def pad_to(self, tokens, do_pad=True):
+            if len(tokens) >= self.max_utt_size:
+                return tokens[0:self.max_utt_size-1] + [tokens[-1]]
+            elif do_pad:
+                return tokens + [0] * (self.max_utt_size-len(tokens))
+            else:
+                return tokens
 
+    def _prepare_batch(self, cur_grid, prev_grid):
+        b_id, s_id, e_id = cur_grid
+        print "starting id", s_id
+
+        batch_ids = self.batch_indexes[b_id]
+        rows = [self.data[idx] for idx in batch_ids]
+        meta_rows = [self.meta_data[idx] for idx in batch_ids]
+        dialog_lens = [self.data_lens[idx] for idx in batch_ids]
+
+        cur_pos = [np.minimum(1.0, e_id/float(l)) for l in dialog_lens]
+
+        context_lens, context_utts, out_utts, out_lens = [], [], [], []
+        print "Rows len: {}".format(len(rows))
+        for row in rows:
+            if s_id < len(row)-1:
+                cut_row = row[s_id:e_id]
+
+                # split rows into input (in_row) and the thing being predicted (out_row)
+                in_row = cut_row[0:-1]
+                out_row = cut_row[-1]
+
+                if len(cut_row) == 0:
+                    print 'hi'
+                    continue
+
+                context_utts.append(in_row)
+                context_lens.append(len(cut_row) - 1)
+
+                out_utts.append(out_row)
+                out_lens.append(1)
+
+            else:
+                print(row)
+                raise ValueError("S_ID %d larger than row" % s_id)
+
+        vec_paragraph_topics = np.array(meta_rows)
+        print "meta shape", vec_paragraph_topics.shape
+        vec_context_lens = np.array(context_lens)
+        vec_context = np.zeros((self.batch_size, np.max(vec_context_lens), 1), dtype=np.int32)
+        print "input shape", vec_context.shape
+        vec_outs = np.zeros((self.batch_size, 1), dtype=np.int32)
+        vec_out_lens = np.array(out_lens)
+
+        for b_id in range(self.batch_size):
+            vec_outs[b_id, 0] = out_utts[b_id][0]
+            # vec_outs[b_id] = out_utts[b_id]
+
+            # vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id]).reshape((len(context_utts[b_id]), 1))
+            vec_context[b_id, 0:vec_context_lens[b_id], :] = np.array(context_utts[b_id])
+
+        print "output shape", vec_outs.shape
+        print vec_outs
+
+        return vec_context, vec_context_lens, vec_outs, vec_out_lens, vec_paragraph_topics
 
 
 

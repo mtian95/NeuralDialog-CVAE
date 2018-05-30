@@ -1,26 +1,23 @@
 # Usage V2
 
-All model parameters can be changed in 
+All model parameters can be changed in config_utils.py
 
 ## Train LDA topic model
     python lda.py
 Specify the number of topics, number of documents to train on, corpus, and save paths in config_utils.py.  
 This will save a trained lda model to lda_model_save_path + number of docs it was trained on + epoch time of runtime
 
-## Train vanilla RNN baseline
-Not implemented yet
-
 ## Train Hierarchical baseline
-    python main.py --model_type=hierbaseline
+    python main.py --model_type=hierbaseline --data_dir=[path to pickle file with data format specified below]
 All config for this model is the same as the config for KgCVAE set in config_utils.py.  
 This will default to training and saving the model into ./working_hierbaseline
 
 ## Train CVAE
-    python main.py --model_type=kgcvae --use_hcf=False
-will run default cvae training and save model to ./working_kgcvae (unfortunately this is the same directory as kgcvae)
+    python main.py --model_type=cvae --data_dir=[path to pickle file with data format specified below]
+will run default cvae training and save model to ./working_cvae
 
 ## Train KgCVAE
-    python main.py --model_type=kgcvae
+    python main.py --model_type=kgcvae --data_dir=[path to pickle file with data format specified below]
 will run default training and save model to ./working_kgcvae
 
 

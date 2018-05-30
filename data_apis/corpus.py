@@ -11,7 +11,6 @@ from gensim.corpora import Dictionary
 import keras 
 
 
-
 class SWDADialogCorpus(object):
     dialog_act_id = 0
     sentiment_id = 1
@@ -21,7 +20,9 @@ class SWDADialogCorpus(object):
         lda_model=None, imdb=False):
 
         """
-        :param corpus_path: the folder that contains the SWDA dialog corpus
+        corpus_path: the folder that contains the SWDA dialog corpus
+        NOTE: the beginning of the some code to use the IMDB corpus is commented out below. 
+            It's not finished and would need to be changed.
         """
         self._path = corpus_path
         self.word_vec_path = word2vec
@@ -29,32 +30,36 @@ class SWDADialogCorpus(object):
         self.word2vec = None
         self.dialog_id = 0
         self.meta_id = 1
-        # self.utt_id = 2
         self.utt_id = 1 
         self.sil_utt = ["<s>", "<sil>", "</s>"]
         self.imdb = imdb
         
-        if not self.imdb:
-            data = pkl.load(open(self._path, "rb"))
-            self.train_corpus = self.process(data["train"])
-            self.valid_corpus = self.process(data["valid"])
-            self.test_corpus = self.process(data["test"])
+        # if not self.imdb:
+        #     data = pkl.load(open(self._path, "rb"))
+        #     self.train_corpus = self.process(data["train"])
+        #     self.valid_corpus = self.process(data["valid"])
+        #     self.test_corpus = self.process(data["test"])
 
-        elif self.imdb:
-            self.index_from = 3
-            (x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
-                                                                    path='imdb.npz',
-                                                                    num_words=None,
-                                                                    skip_top=0,
-                                                                    maxlen=None,
-                                                                    seed=113,
-                                                                    start_char=2,
-                                                                    oov_char=1,
-                                                                    index_from=self.index_from)
+        # elif self.imdb:
+        #     self.index_from = 3
+        #     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(
+        #                                                             path='imdb.npz',
+        #                                                             num_words=None,
+        #                                                             skip_top=0,
+        #                                                             maxlen=None,
+        #                                                             seed=113,
+        #                                                             start_char=2,
+        #                                                             oov_char=1,
+        #                                                             index_from=self.index_from)
 
-            self.train_corpus = self.process(x_train)
-            self.valid_corpus = self.process(data["valid"])
-            self.test_corpus = self.process(data["test"])
+        #     self.train_corpus = self.process(x_train)
+        #     self.valid_corpus = self.process(data["valid"])
+        #     self.test_corpus = self.process(data["test"])
+
+        data = pkl.load(open(self._path, "rb"))
+        self.train_corpus = self.process(data["train"])
+        self.valid_corpus = self.process(data["valid"])
+        self.test_corpus = self.process(data["test"])
 
         self.vocab_dict_path = vocab_dict_path
         self.lda_model = lda_model
@@ -63,8 +68,7 @@ class SWDADialogCorpus(object):
         print("Done loading corpus")
 
     def process(self, data):
-        """new_dialog: [(a, 1/0), (a,1/0)], new_meta: (a, b, topic), new_utt: [[a,b,c)"""
-        """ 1 is own utt and 0 is other's utt"""
+        """ TODO """
         new_dialog = []
         new_meta = []
         new_utts = []
@@ -72,26 +76,17 @@ class SWDADialogCorpus(object):
         all_lenes = []
 
         for l in data:
-            # lower_utts = list of tokenized version of the strings
             lower_utts = [(["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"])
                           for utt in l] # for utt in l['utts']]
             all_lenes.extend([len(u) for u in lower_utts])
-            # lower_utts = [(caller, ["<s>"] + nltk.WordPunctTokenizer().tokenize(utt.lower()) + ["</s>"], feat)
-                          # for caller, utt, feat in l["utts"]]
-            # all_lenes.extend([len(u) for c, u, f in lower_utts])
 
-            # dialog = [(bod_utt, 0, None)] + [(utt, int(caller=="B"), feat) for caller, utt, feat in lower_utts]
             # dialog = [(bod_utt, 0)] + [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
             dialog = [(utt, int(ind==len(lower_utts)-2)) for ind, utt in enumerate(lower_utts)]
 
-
-            # new_utts.extend([bod_utt] + [utt for caller, utt, feat in lower_utts])
             new_utts.extend([bod_utt] + lower_utts)
             new_dialog.append(dialog)
-            # new_meta.append(meta)
 
         print("Max utt len %d, mean utt len %.2f" % (np.max(all_lenes), float(np.mean(all_lenes))))
-        # return new_dialog, new_meta, new_utts
         return new_dialog, new_utts
 
     def build_vocab(self, max_vocab_cnt):
@@ -129,29 +124,8 @@ class SWDADialogCorpus(object):
             # self.unk_id = 1
             # self.rev_vocab = {v:k for k,v in word_to_id.items()}
 
-        # NOTE commenting out below lines gets rid of topic vocab and dialog vocab
-        # # create topic vocab
-        # all_topics = []
-        # for a, b, topic in self.train_corpus[self.meta_id]:
-        #     all_topics.append(topic)
-        # self.topic_vocab = [t for t, cnt in Counter(all_topics).most_common()]
-        # self.rev_topic_vocab = {t: idx for idx, t in enumerate(self.topic_vocab)}
-        # print("%d topics in train data" % len(self.topic_vocab))
-
-        # # get dialog act labels
-        # all_dialog_acts = []
-        # for dialog in self.train_corpus[self.dialog_id]:
-        #     all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
-
-        # all_dialog_acts = []
-        # for dialog in self.train_corpus[self.dialog_id]:
-        #     all_dialog_acts.extend([feat[self.dialog_act_id] for caller, utt, feat in dialog if feat is not None])
-        # self.dialog_act_vocab = [t for t, cnt in Counter(all_dialog_acts).most_common()]
-        # self.rev_dialog_act_vocab = {t: idx for idx, t in enumerate(self.dialog_act_vocab)}
-        # print(self.dialog_act_vocab)
-        # print("%d dialog acts in train data" % len(self.dialog_act_vocab))
-
     def load_word2vec(self):
+        """Load word2vec if it's specified"""
         if self.word_vec_path is None:
             return
         with open(self.word_vec_path, "rb") as f:
@@ -160,6 +134,7 @@ class SWDADialogCorpus(object):
         for l in lines:
             w, vec = l.split(" ", 1)
             raw_word2vec[w] = vec
+
         # clean up lines for memory efficiency
         self.word2vec = []
         oov_cnt = 0
@@ -173,8 +148,8 @@ class SWDADialogCorpus(object):
             self.word2vec.append(vec)
         print("word2vec cannot cover %f vocab" % (float(oov_cnt)/len(self.vocab)))
 
-    # returns tokenized versions of the corpus. currently not used.
     def get_utt_corpus(self):
+        """Currently unused"""
         def _to_id_corpus(data):
             results = []
             for line in data:
@@ -186,67 +161,49 @@ class SWDADialogCorpus(object):
         id_test = _to_id_corpus(self.test_corpus[self.utt_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
-    # returns list of lists, one list for each paragraph
-    # each list = list of tuples, one for each sentence
-    # sentence tuple = ([tokens rep each word in sent], floor, feat)
-    # to_id_corpus2: returns (sent in tokens, 0/1 paragraph end label, vector version of topic of just that sent)
+
     def get_dialog_corpus(self):
-        # returns a topic vector for each paragraph
+        """
+        Prepare dialog corpus.
+        Returns list of lists, one list for each paragraph
+        Each list = list of tuples, one for each sentence
+        Sentence tuple = ([tokens rep each word in sent], floor, sent topic)
+        """
         def _get_topic_vector(text):
             text = " ".join(text)
             return self.lda_model.get_topic_vector(text)
 
-        def _to_id_corpus2(data):
+        def _to_id_corpus(data):
             results = []
-            # counter = 0
             for dialog in data:
-                temp_text = []
                 temp_tokens = []
                 temp_topics = []
+                temp_floor = []
                 for utt, end_label in dialog:
                     temp_topics.append(_get_topic_vector(utt))
                     temp_tokens.append([self.rev_vocab.get(t, self.unk_id) for t in utt])
-                temp_floor = [0]*(len(dialog)-1) + [1]
+                    temp_floor.append(end_label)
+                # temp_floor = [0]*(len(dialog)-1) + [1]
                 results.append(zip(temp_tokens, temp_floor, temp_topics))
-                # counter += 1
-                # if counter == 31:
-                #     break
             return results
 
-        # deprecated method
-        def _to_id_corpus(data):
-            results = []
-            for dialog in data:
-                temp = []
-                # convert utterance and feature into numeric numbers
-                for utt, floor, feat in dialog:
-                    if feat is not None:
-                        id_feat = list(feat)
-                        id_feat[self.dialog_act_id] = self.rev_dialog_act_vocab[feat[self.dialog_act_id]]
-                    else:
-                        id_feat = None
-                    temp.append(([self.rev_vocab.get(t, self.unk_id) for t in utt], floor, id_feat))
-                results.append(temp)
-            return results
-
-        id_train = _to_id_corpus2(self.train_corpus[self.dialog_id])
-        id_valid = _to_id_corpus2(self.valid_corpus[self.dialog_id])
-        id_test = _to_id_corpus2(self.test_corpus[self.dialog_id])
+        id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
+        id_valid = _to_id_corpus(self.valid_corpus[self.dialog_id])
+        id_test = _to_id_corpus(self.test_corpus[self.dialog_id])
         return {'train': id_train, 'valid': id_valid, 'test': id_test}
 
-    # returns topic vector for entire paragraph (or keywords during testing). this is fed in as metadata
     def get_meta_corpus(self):
+        """
+        Prepares meta corpus. 
+        Returns a paragraph level topic vector for each paragraph (aka each dialog)
+        """
         def _to_id_corpus(data):
             results = []
-            # counter = 0
             for dialog in data:
                 tmp_sentences = []
                 for utt, end_label in dialog:
                     tmp_sentences.extend(utt)
                 results.append(self.lda_model.get_topic_vector(" ".join(tmp_sentences)))
-                # counter += 1
-                # if counter == 31:
-                #     break
             return results
 
         id_train = _to_id_corpus(self.train_corpus[self.dialog_id])
